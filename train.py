@@ -1,4 +1,14 @@
 import os
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # turn off oneDNN custom operations
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"  # hide AVX log message
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/local/cuda"  # keep XLA happy
+os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=0"  # disable XLA JIT (removes warnings)
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
+# hide all warnings (including librosa's FutureWarning about np.complex)
 import sys
 import time
 import logging
@@ -9,8 +19,9 @@ from pesq import pesq
 from pystoi import stoi
 import csv
 
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # turn off oneDNN custom operations
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"  # hide AVX log message
+
+import warnings
+warnings.filterwarnings("ignore")
 import pandas as pd
 import numpy as np
 import onnxruntime as ort
@@ -1060,7 +1071,7 @@ callbacks = [
         model_filename,
         monitor="val_loss",
         save_best_only=True,
-        save_weights_only=True,
+        save_weights_only=False,
         verbose=1,
     ),
     EarlyStopping(
