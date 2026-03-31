@@ -674,26 +674,15 @@ class mLSTMCell(Layer):
         ]
 
 
-def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="xlstm"):
+def add_gru_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="gru"):
     """
-    Add xLSTM blocks with unique names using the prefix argument.
+    Add GRU blocks with unique names using the prefix argument.
     """
-    if block_types is None:
-        block_types = ["sLSTM", "mLSTM"] * ((num_layers + 1) // 2)
-        block_types = block_types[:num_layers]
-
-    for i, block_type in enumerate(block_types):
+    for i in range(num_layers):
         residual = x
 
-        if block_type == "sLSTM":
-            cell = sLSTMCell(hidden_dim, forget_gate_type="sigmoid")
-        elif block_type == "mLSTM":
-            cell = mLSTMCell(hidden_dim, forget_gate_type="sigmoid")
-        else:
-            raise ValueError(f"Unknown block type: {block_type}")
-
-        # Unique name using the prefix and index
-        x = RNN(cell, return_sequences=True, name=f"{prefix}_{block_type}_{i}")(x)
+        # Use GRU layer with return_sequences=True
+        x = GRU(hidden_dim, return_sequences=True, name=f"{prefix}_gru_{i}")(x)
 
         if residual.shape[-1] == x.shape[-1]:
             # Names for operations like Add and LayerNorm are usually auto-generated,
@@ -973,8 +962,8 @@ def custom_unet(
         filters_ref *= 2
 
     ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
-    # Replaced GRU with xLSTM Block
-    ref_seq = add_xlstm_block(
+    # Apply GRU Block
+    ref_seq = add_gru_block(
         ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
     )
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
@@ -987,7 +976,7 @@ def custom_unet(
 
     # 2. Project 4096 down to 256 (This is where you save millions of parameters!) 128 small, 256 medium, 512 large
     x_reduced = TimeDistributed(
-        Dense(512, activation=activation), name="bottleneck_projection"
+        Dense(128, activation=activation), name="bottleneck_projection"
     )(x_flat)
 
     # 3. Add Speaker Embedding
@@ -995,8 +984,8 @@ def custom_unet(
     spk_repeated = RepeatVector(T_small)(speaker_embed)
     x_seq = Concatenate(axis=-1, name="bottleneck_concat")([x_reduced, spk_repeated])
 
-    # 4. Apply xLSTM on the compressed dimension (hidden_dim=512 is plenty, medium, small-256, large, 1024)
-    x_seq = add_xlstm_block(x_seq, hidden_dim=1024, num_layers=2, prefix="main")
+    # 4. Apply GRU on the compressed dimension (hidden_dim=512 is plenty, medium, small-256, large, 1024)
+    x_seq = add_gru_block(x_seq, hidden_dim=256, num_layers=2, prefix="main")
 
     # 5. Project back up to the original flattened size (4096)
     x_expanded = TimeDistributed(
@@ -1012,19 +1001,6 @@ def custom_unet(
     if not use_dropout_on_upsampling:
         dropout = 0.0
         dropout_change_per_layer = 0.0
-    # for conv in reversed(down_layers):
-    #     filters //= 2
-    #     dropout -= dropout_change_per_layer
-    #     x = upsample_bilinear_personalized(x, speaker_embed, filters)
-    #     if use_attention:
-    #         x = attention_concat(conv_below=x, skip_connection=conv)
-    #     else:
-    #         x = concatenate([x, conv])
-
-    #     x = cross_attention_cond(x, speaker_embed)
-    #     x = conv2d_block(x, filters=filters, use_batch_norm=use_batch_norm,
-    #                      dropout=dropout, dropout_type=dropout_type, activation=activation)
-
     for conv in reversed(down_layers):
         filters //= 2  # decreasing number of filters with each layer
         dropout -= dropout_change_per_layer
@@ -1060,7 +1036,7 @@ model = custom_unet(
     num_classes=2,
     filters=32,
     use_dropout_on_upsampling=False,
-    num_layers=5,
+    num_layers=3,
     use_attention=False,
     upsample_mode="deconv",
     dropout=0.2,
@@ -1165,6 +1141,8 @@ lr_schedule = WarmupCosineDecay(
 optimizer = tf.keras.optimizers.Adam(
     learning_rate=lr_schedule, weight_decay=1e-3, clipnorm=1.0
 )
+
+model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
