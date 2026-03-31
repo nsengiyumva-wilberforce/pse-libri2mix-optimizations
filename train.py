@@ -1,10 +1,5 @@
 import os
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # turn off oneDNN custom operations
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"  # hide AVX log message
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/local/cuda"  # keep XLA happy
-os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=0"  # disable XLA JIT (removes warnings)
+
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
@@ -346,38 +341,33 @@ def configure_libri_speech_dataset(
 ):
     ds = tf.data.Dataset.from_tensor_slices(
         (mixture_files, reference_files, target_files)
-    ).cache()
-    if is_train:
-        ds = ds.shuffle(batch_size * 1000)
-    # --------------------------------------------------
+    )
+
     # 1. Load + chunk
-    # --------------------------------------------------
     ds = ds.map(
         lambda n, r, t: load_libri_speech_triplet_multiview(n, r, t, K),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
-    # --------------------------------------------------
-    # 2. FLATTEN chunks (CRITICAL)
-    # --------------------------------------------------
-    ds = ds.flat_map(
-        lambda mix_chunks, ref_segments, clean_chunks: tf.data.Dataset.from_tensor_slices(
-            (mix_chunks, clean_chunks)
-        ).map(
-            lambda m, c: (m, ref_segments, c)
-        )
+
+    # 2. Flatten chunks (parallelized)
+    ds = ds.interleave(
+        lambda mix_chunks, ref_segments, clean_chunks:
+            tf.data.Dataset.from_tensor_slices((mix_chunks, clean_chunks))
+            .map(lambda m, c: (m, ref_segments, c)),
+        num_parallel_calls=tf.data.AUTOTUNE,
     )
-    # Now each element is:
-    # (chunk, same_ref_segments, chunk)
-    # --------------------------------------------------
-    # 3. STFT
-    # --------------------------------------------------
+
+    # 3. Shuffle AFTER chunking
+    if is_train:
+        ds = ds.shuffle(10000)
+
+    # 4. STFT
     ds = ds.map(
         lambda mix, ref, clean: convert_to_spectrogram_multiview(mix, ref, clean),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
-    # --------------------------------------------------
-    # 4. Convert to 2-channel (real/imag)
-    # --------------------------------------------------
+
+    # 5. Convert to 2-channel
     ds = ds.map(
         lambda spec_noisy, spec_refs, spec_clean: (
             {
@@ -388,11 +378,8 @@ def configure_libri_speech_dataset(
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
-    # --------------------------------------------------
-    # 5. Batch LAST
-    # --------------------------------------------------
-    ds = ds.prefetch(tf.data.AUTOTUNE)
-    return ds
+
+    return ds.prefetch(tf.data.AUTOTUNE)
 
 
 train_ds = configure_libri_speech_dataset(
@@ -403,7 +390,7 @@ test_ds = configure_libri_speech_dataset(TEST_MIX, TEST_REF, TEST_TGT, is_train=
 
 
 # # 4. Batch and Prefetch
-train_dataset = train_ds.repeat().batch(batch_size).prefetch(tf.data.AUTOTUNE)
+train_dataset = train_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 val_dataset = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 test_dataset = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 for noise, clean in train_dataset.take(1):
@@ -674,25 +661,37 @@ class mLSTMCell(Layer):
         ]
 
 
-def add_gru_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="gru"):
+def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="xlstm"):
     """
-    Add GRU blocks with unique names using the prefix argument.
+    Add xLSTM blocks with unique names using the prefix argument.
     """
-    for i in range(num_layers):
+    if block_types is None:
+        block_types = ["sLSTM", "mLSTM"] * ((num_layers + 1) // 2)
+        block_types = block_types[:num_layers]
+    
+    for i, block_type in enumerate(block_types):
         residual = x
-
-        # Use GRU layer with return_sequences=True
-        x = GRU(hidden_dim, return_sequences=True, name=f"{prefix}_gru_{i}")(x)
-
+        
+        if block_type == 'sLSTM':
+            cell = sLSTMCell(hidden_dim, forget_gate_type='sigmoid')
+        elif block_type == 'mLSTM':
+            cell = mLSTMCell(hidden_dim, forget_gate_type='sigmoid')
+        else:
+            raise ValueError(f"Unknown block type: {block_type}")
+        
+        # Unique name using the prefix and index
+        x = RNN(cell, return_sequences=True, 
+                name=f'{prefix}_{block_type}_{i}')(x)
+        
         if residual.shape[-1] == x.shape[-1]:
             # Names for operations like Add and LayerNorm are usually auto-generated,
             # but you can name them too if you want total safety:
-            x = Add(name=f"{prefix}_add_{i}")([residual, x])
-            x = LayerNormalization(epsilon=1e-6, name=f"{prefix}_ln_{i}")(x)
-
+            x = Add(name=f'{prefix}_add_{i}')([residual, x])
+            x = LayerNormalization(epsilon=1e-6, name=f'{prefix}_ln_{i}')(x)
+        
         if i < num_layers - 1:
-            x = Dropout(0.2, name=f"{prefix}_do_{i}")(x)
-
+            x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
+    
     return x
 
 
@@ -963,9 +962,10 @@ def custom_unet(
 
     ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
     # Apply GRU Block
-    ref_seq = add_gru_block(
-        ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
-    )
+    # ref_seq = add_gru_block(
+    #     ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
+    # )
+    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
 
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
@@ -985,7 +985,7 @@ def custom_unet(
     x_seq = Concatenate(axis=-1, name="bottleneck_concat")([x_reduced, spk_repeated])
 
     # 4. Apply GRU on the compressed dimension (hidden_dim=512 is plenty, medium, small-256, large, 1024)
-    x_seq = add_gru_block(x_seq, hidden_dim=256, num_layers=2, prefix="main")
+    x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main")
 
     # 5. Project back up to the original flattened size (4096)
     x_expanded = TimeDistributed(
@@ -1006,7 +1006,7 @@ def custom_unet(
         dropout -= dropout_change_per_layer
         x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
         # Apply FiLM conditioning after upsampling but before concatenation
-        # x = film(x, speaker_embed)
+        x = film(x, speaker_embed)
         if use_attention:
             x = attention_concat(conv_below=x, skip_connection=conv)
         else:
@@ -1028,7 +1028,7 @@ def custom_unet(
 
 
 model_filename = (
-    "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.weights.h5"
+    "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
 )
 model = custom_unet(
     input_shape=(384, 256, 2),
@@ -1036,7 +1036,7 @@ model = custom_unet(
     num_classes=2,
     filters=32,
     use_dropout_on_upsampling=False,
-    num_layers=3,
+    num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
     dropout=0.2,
@@ -1157,9 +1157,9 @@ model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 history = model.fit(
     train_dataset,
     epochs=EPOCHS,
-    steps_per_epoch=steps_per_epoch,
+    # steps_per_epoch=steps_per_epoch,
     validation_data=val_dataset,
-    validation_steps=validation_steps,
+    # validation_steps=validation_steps,
     callbacks=callbacks + [LrLogger()],
 )
 
