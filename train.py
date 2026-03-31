@@ -1122,6 +1122,14 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
 
         return tf.cond(step < warmup_steps, warmup_lr, decay_lr)
 
+    def get_config(self):
+        return {
+            "initial_lr": self.initial_lr,
+            "total_steps": self.total_steps,
+            "warmup_steps": self.warmup_steps,
+            "alpha": self.alpha,
+        }
+
 
 class LrLogger(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
