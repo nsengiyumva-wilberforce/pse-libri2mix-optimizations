@@ -1154,19 +1154,32 @@ model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-history = model.fit(
-    train_dataset,
-    epochs=EPOCHS,
-    # steps_per_epoch=steps_per_epoch,
-    validation_data=val_dataset,
-    # validation_steps=validation_steps,
-    callbacks=callbacks + [LrLogger()],
-)
+# history = model.fit(
+#     train_dataset,
+#     epochs=EPOCHS,
+#     # steps_per_epoch=steps_per_epoch,
+#     validation_data=val_dataset,
+#     # validation_steps=validation_steps,
+#     callbacks=callbacks + [LrLogger()],
+# )
 
 
 # Evaluate the model on test set
-model.load_weights(
-    "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.weights.h5"
+# model.load_weights(
+#     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.weights.
+# )
+# model.trainable = False
+# print("Model loaded for inference")
+
+# load the keras model for inference
+model = tf.keras.models.load_model(
+    "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras",
+    custom_objects={
+        "sLSTMCell": sLSTMCell,
+        "mLSTMCell": mLSTMCell,
+        "WarmupCosineDecay": WarmupCosineDecay,
+        "complex_enhancement_loss_pc": complex_enhancement_loss_pc,
+    }
 )
 model.trainable = False
 print("Model loaded for inference")
