@@ -976,7 +976,7 @@ def custom_unet(
 
     # 2. Project 4096 down to 256 (This is where you save millions of parameters!) 128 small, 256 medium, 512 large
     x_reduced = TimeDistributed(
-        Dense(128, activation=activation), name="bottleneck_projection"
+        Dense(1024, activation=activation), name="bottleneck_projection"
     )(x_flat)
 
     # 3. Add Speaker Embedding
@@ -1133,7 +1133,7 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
     return (4.0 * mag_loss + 
             4.0 * complex_loss + 
             1.0 * consistency_loss + 
-            0.1 * si_loss) # SI-SNR scale is much larger, so weight it lower
+            1.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
 
 
 total_steps = steps_per_epoch * EPOCHS
