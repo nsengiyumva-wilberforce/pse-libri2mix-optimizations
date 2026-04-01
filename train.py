@@ -1021,8 +1021,35 @@ def custom_unet(
             dropout_type=dropout_type,
             activation=activation,
         )
-    output_mask = Conv2D(num_classes, (1, 1), activation=output_activation)(x)
-    outputs = keras.layers.Multiply()([output_mask, main_input_copy])
+    # --- Split noisy input into real / imag ---
+    input_r = main_input_copy[..., 0:1]
+    input_i = main_input_copy[..., 1:2]
+
+    # --- Predict complex mask (no activation) ---
+    mask_r = Conv2D(1, (1, 1), activation=None, name="mask_real")(x)
+    mask_i = Conv2D(1, (1, 1), activation=None, name="mask_imag")(x)
+
+    # --- Stabilize (prevents explosion early training) ---
+    mask_r = 5.0 * ops.tanh(mask_r / 5.0)
+    mask_i = 5.0 * ops.tanh(mask_i / 5.0)
+
+    # --- Complex multiplication ---
+    out_r = layers.Subtract()([
+        layers.Multiply()([mask_r, input_r]),
+        layers.Multiply()([mask_i, input_i])
+    ])
+
+    out_i = layers.Add()([
+        layers.Multiply()([mask_r, input_i]),
+        layers.Multiply()([mask_i, input_r])
+    ])
+
+    # --- Residual connection (very important) ---
+    out_r = layers.Add()([input_r, out_r])
+    out_i = layers.Add()([input_i, out_i])
+
+    # --- Merge back to 2-channel ---
+    outputs = Concatenate(axis=-1)([out_r, out_i])
 
     return Model(inputs=[main_input, ref_input], outputs=[outputs])
 
@@ -1061,35 +1088,52 @@ callbacks = [
 
 
 def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
-    # 1. Extract Components
-    real_t, imag_t = y_true[..., 0], y_true[..., 1]
-    real_p, imag_p = y_pred[..., 0], y_pred[..., 1]
-    # 2. Power Compressed Magnitude Loss
-    # High gamma (0.5) helps the model see quiet speech parts
-    mag_t = tf.sqrt(real_t**2 + imag_t**2 + eps)
-    mag_p = tf.sqrt(real_p**2 + imag_p**2 + eps)
+    # Split Real and Imaginary
+    # Shape expected: (Batch, Time, Freq, 2)
+    r_t, i_t = y_true[..., 0], y_true[..., 1]
+    r_p, i_p = y_pred[..., 0], y_pred[..., 1]
 
+    # 1. Compressed Magnitude Loss
+    mag_t = tf.sqrt(r_t**2 + i_t**2 + eps)
+    mag_p = tf.sqrt(r_p**2 + i_p**2 + eps)
     mag_loss = tf.reduce_mean(tf.abs(mag_t**gamma - mag_p**gamma))
-    # 3. Phase-Aware Complex Loss
-    # We compress the complex values themselves to preserve the phase angle
-    # while scaling the amplitude
-    real_t_c = real_t * (mag_t ** (gamma - 1))
-    imag_t_c = imag_t * (mag_t ** (gamma - 1))
-    real_p_c = real_p * (mag_p ** (gamma - 1))
-    imag_p_c = imag_p * (mag_p ** (gamma - 1))
 
-    complex_loss = tf.reduce_mean(
-        tf.abs(real_t_c - real_p_c) + tf.abs(imag_t_c - imag_p_c)
-    )
-    # 4. Temporal Consistency Term (The "Flicker" Fix)
-    # This penalizes sharp, unnatural changes between adjacent time frames
-    # y_shape: (Batch, Time, Freq, Complex)
-    delta_true = y_true[:, 1:, :, :] - y_true[:, :-1, :, :]
-    delta_pred = y_pred[:, 1:, :, :] - y_pred[:, :-1, :, :]
-    consistency_loss = tf.reduce_mean(tf.abs(delta_true - delta_pred))
-    # Total Loss: Balanced for 16kHz Speaker Extraction
-    # 0.7 (Complex/Mag) + 0.3 (Temporal Smoothness)
-    return 4 * mag_loss + 4 * complex_loss + 2 * consistency_loss
+    # 2. Compressed Complex Loss (Handles Phase implicitly and stably)
+    # This transforms the complex values into the compressed domain
+    # Formula: (r + ji) / |mag| * |mag|^gamma = (r + ji) * |mag|^(gamma-1)
+    factor_t = mag_t**(gamma - 1)
+    factor_p = mag_p**(gamma - 1)
+    
+    c_real_t, c_imag_t = r_t * factor_t, i_t * factor_t
+    c_real_p, c_imag_p = r_p * factor_p, i_p * factor_p
+    
+    complex_loss = tf.reduce_mean(tf.abs(c_real_t - c_real_p) + tf.abs(c_imag_t - c_imag_p))
+
+    # 3. Temporal Consistency (Delta Loss)
+    # Using the compressed magnitude for delta often yields better PESQ
+    delta_mag_t = mag_t[:, 1:, :] - mag_t[:, :-1, :]
+    delta_mag_p = mag_p[:, 1:, :] - mag_p[:, :-1, :]
+    consistency_loss = tf.reduce_mean(tf.square(delta_mag_t - delta_mag_p))
+
+    # 4. Scale-Invariant Signal-to-Noise Ratio (SI-SNR) 
+    # Much more stable than a custom SI-L1 loss
+    t_flat = tf.reshape(y_true, [tf.shape(y_true)[0], -1])
+    p_flat = tf.reshape(y_pred, [tf.shape(y_pred)[0], -1])
+    
+    dot = tf.reduce_sum(t_flat * p_flat, axis=1, keepdims=True)
+    snr_norm = tf.reduce_sum(t_flat**2, axis=1, keepdims=True) + eps
+    target_proj = (dot / snr_norm) * t_flat
+    
+    noise_res = p_flat - target_proj
+    si_snr = 10 * tf.math.log(tf.reduce_sum(target_proj**2, axis=1) / 
+                             (tf.reduce_sum(noise_res**2, axis=1) + eps) + eps) / tf.math.log(10.0)
+    
+    si_loss = -tf.reduce_mean(si_snr) # Negative because we want to maximize SNR
+
+    return (4.0 * mag_loss + 
+            4.0 * complex_loss + 
+            1.0 * consistency_loss + 
+            0.1 * si_loss) # SI-SNR scale is much larger, so weight it lower
 
 
 total_steps = steps_per_epoch * EPOCHS
@@ -1154,14 +1198,14 @@ model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-# history = model.fit(
-#     train_dataset,
-#     epochs=EPOCHS,
-#     # steps_per_epoch=steps_per_epoch,
-#     validation_data=val_dataset,
-#     # validation_steps=validation_steps,
-#     callbacks=callbacks + [LrLogger()],
-# )
+history = model.fit(
+    train_dataset,
+    epochs=EPOCHS,
+    # steps_per_epoch=steps_per_epoch,
+    validation_data=val_dataset,
+    # validation_steps=validation_steps,
+    callbacks=callbacks + [LrLogger()],
+)
 
 
 # Evaluate the model on test set
