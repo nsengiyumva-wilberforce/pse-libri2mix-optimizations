@@ -152,11 +152,11 @@ sr = 8000
 n_fft = 510  # 128 freq bins
 frame_length = 400
 frame_step = 160
-trim_length = 61680  # 384 time frames after STFT
+trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 4
+batch_size = 2
 EPOCHS = 300
-CHUNK_SIZE = 61680  # chunk into 4s
+CHUNK_SIZE = 31000  # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
 TARGET_SR = 8000
 TRAIN_MIX, TRAIN_REF, TRAIN_TGT = load_scp(
@@ -880,7 +880,50 @@ def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
     attn_map = Reshape((T, F, C))(attn)
     # Residual modulation
     return x + attn_map
+    
+def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
+    # ---- Frequency branch (1 x 3) ----
+    f_branch = Conv2D(filters, (1, 3), padding="same",
+                      kernel_initializer="he_normal",
+                      name=f"{name_prefix}_fconv")(x)
+    if use_bn:
+        f_branch = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
+    f_branch = Activation(activation)(f_branch)
 
+    # ---- Time branch (3 x 1) ----
+    t_branch = Conv2D(filters, (3, 1), padding="same",
+                      kernel_initializer="he_normal",
+                      name=f"{name_prefix}_tconv")(x)
+    if use_bn:
+        t_branch = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
+    t_branch = Activation(activation)(t_branch)
+
+    # ---- Merge ----
+    x = Concatenate(name=f"{name_prefix}_concat")([f_branch, t_branch])
+
+    # ---- Separable TF mixing ----
+    x = DepthwiseConv2D((3,3), padding="same",
+                        depthwise_initializer="he_normal",
+                        name=f"{name_prefix}_dw")(x)
+
+    x = Conv2D(filters, 1, padding="same",
+               kernel_initializer="he_normal",
+               name=f"{name_prefix}_pw")(x)
+
+    if use_bn:
+        x = BatchNormalization(name=f"{name_prefix}_pw_bn")(x)
+
+    x = Activation(activation)(x)
+
+    # ---- Joint TF modeling ----
+    x = Conv2D(filters, (3, 3), padding="same",
+               kernel_initializer="he_normal",
+               name=f"{name_prefix}_joint")(x)
+    if use_bn:
+        x = BatchNormalization(name=f"{name_prefix}_jbn")(x)
+    x = Activation(activation)(x)
+
+    return x
 
 def plot_spectrogram(spectrogram, ax):
     log_spec = np.log(spectrogram.T + np.finfo(float).eps)
@@ -921,14 +964,15 @@ def custom_unet(
 
     down_layers = []
     for l in range(num_layers):
-        x = conv2d_block(
-            x,
-            filters=filters,
-            use_batch_norm=use_batch_norm,
-            dropout=dropout,
-            dropout_type=dropout_type,
-            activation=activation,
-        )
+        # x = conv2d_block(
+        #     x,
+        #     filters=filters,
+        #     use_batch_norm=use_batch_norm,
+        #     dropout=dropout,
+        #     dropout_type=dropout_type,
+        #     activation=activation,
+        # )
+        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
         dropout += dropout_change_per_layer
@@ -976,7 +1020,7 @@ def custom_unet(
 
     # 2. Project 4096 down to 256 (This is where you save millions of parameters!) 128 small, 256 medium, 512 large
     x_reduced = TimeDistributed(
-        Dense(1024, activation=activation), name="bottleneck_projection"
+        Dense(4096, activation=activation), name="bottleneck_projection"
     )(x_flat)
 
     # 3. Add Speaker Embedding
@@ -984,7 +1028,7 @@ def custom_unet(
     spk_repeated = RepeatVector(T_small)(speaker_embed)
     x_seq = Concatenate(axis=-1, name="bottleneck_concat")([x_reduced, spk_repeated])
 
-    # 4. Apply GRU on the compressed dimension (hidden_dim=512 is plenty, medium, small-256, large, 1024)
+    # 4. Apply GRU on the compressed dimension (hidden_dim=256 is plenty, medium, small-256, large, 1024)
     x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main")
 
     # 5. Project back up to the original flattened size (4096)
@@ -1058,7 +1102,7 @@ model_filename = (
     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
 )
 model = custom_unet(
-    input_shape=(384, 256, 2),
+    input_shape=(192, 256, 2),
     use_batch_norm=True,
     num_classes=2,
     filters=32,
@@ -1130,10 +1174,10 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
     
     si_loss = -tf.reduce_mean(si_snr) # Negative because we want to maximize SNR
 
-    return (4.0 * mag_loss + 
-            4.0 * complex_loss + 
-            1.0 * consistency_loss + 
-            1.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
+    return (1.0 * mag_loss + 
+            1.0 * complex_loss + 
+            0.5 * consistency_loss + 
+            2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
 
 
 total_steps = steps_per_epoch * EPOCHS

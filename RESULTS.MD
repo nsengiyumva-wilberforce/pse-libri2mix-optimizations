@@ -50,3 +50,26 @@
 
 
 **Model:** Phase Reuse on 14M Model
+
+# PERFORMANCE ON COMPLEX MASKING MODEL WITH SI-SDR LOSS
+## SI-SDR
+| Metric | Value |
+|--------|-------|
+| Mix | -0.03 |
+| Enhanced | 4.44 |
+| Improvement | 4.47 |
+
+## PESQ
+| Metric | Value |
+|--------|-------|
+| Mix | 1.603 |
+| Enhanced | 1.850 |
+| Improvement | 0.248 |
+
+## STOI
+| Metric | Value |
+|--------|-------|
+| Mix | 0.714 |
+| Enhanced | 0.768 |
+| Improvement | 0.054 |
+**Model:** Phase Reuse on 20M Model on 9 epochs
