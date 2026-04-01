@@ -1228,7 +1228,7 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
     # ==========================================================
     # 🔑 MATCH TRAINING SHAPE
     # ==========================================================
-    CHUNK_LEN = 32300  # MUST match training (change if you trained on 32000)
+    CHUNK_LEN = 61680 # MUST match training (change if you trained on 32000)
     HOP_LEN = int(CHUNK_LEN * (1 - overlap))
 
     REF_LEN = 16000  # already correct (98 frames)
