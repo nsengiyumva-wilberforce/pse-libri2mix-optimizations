@@ -154,7 +154,7 @@ frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 2
+batch_size = 4
 EPOCHS = 300
 CHUNK_SIZE = 31000  # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
@@ -1019,25 +1019,29 @@ def custom_unet(
     x_flat = Reshape((T_small, F_small * C_small), name="bottleneck_flatten")(x)
 
     # 2. Project 4096 down to 256 (This is where you save millions of parameters!) 128 small, 256 medium, 512 large
-    x_reduced = TimeDistributed(
-        Dense(4096, activation=activation), name="bottleneck_projection"
-    )(x_flat)
+    # x_reduced = TimeDistributed(
+    #     Dense(4096, activation=activation), name="bottleneck_projection"
+    # )(x_flat)
+    bottleneck_skip = TimeDistributed(Dense(512))(x_flat)
 
     # 3. Add Speaker Embedding
     # x_reduced: (None, 24, 256), speaker_embed: (None, 256)
     spk_repeated = RepeatVector(T_small)(speaker_embed)
-    x_seq = Concatenate(axis=-1, name="bottleneck_concat")([x_reduced, spk_repeated])
+    x_seq = Concatenate(axis=-1, name="bottleneck_concat")([x_flat, spk_repeated])
 
     # 4. Apply GRU on the compressed dimension (hidden_dim=256 is plenty, medium, small-256, large, 1024)
     x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main")
 
+    x_seq = layers.Add()([x_seq, bottleneck_skip])
+
     # 5. Project back up to the original flattened size (4096)
-    x_expanded = TimeDistributed(
-        Dense(F_small * C_small, activation=activation), name="bottleneck_expansion"
-    )(x_seq)
+    # x_expanded = TimeDistributed(
+    #     Dense(F_small * C_small, activation=activation), name="bottleneck_expansion"
+    # )(x_seq)
 
     # 6. Reshape back to the 4D tensor (None, 24, 16, 256) for the Decoder
-    x = Reshape((T_small, F_small, C_small), name="bottleneck_unflatten")(x_expanded)
+    x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
+    x = Reshape((T_small, F_small, C_small))(x_expanded)
 
     # Now proceed to FiLM and upsampling
     x = cross_attention_cond(x, speaker_embed)
