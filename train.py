@@ -13,7 +13,6 @@ from pesq import pesq
 from pystoi import stoi
 import csv
 
-
 import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
@@ -76,7 +75,9 @@ from tensorflow.keras.layers import (
     Activation,
     Rescaling,
 )
-from tensorflow.keras import mixed_precision
+
+tf.config.optimizer.set_jit(True)
+
 
 #--------------------------------
 # HELPERS FOR DATA LOADING
@@ -155,7 +156,7 @@ frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 2
+batch_size = 4
 EPOCHS = 300
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
