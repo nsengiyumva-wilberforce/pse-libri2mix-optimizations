@@ -1216,14 +1216,14 @@ model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-# history = model.fit(
-#     train_dataset,
-#     epochs=EPOCHS,
-#     # steps_per_epoch=steps_per_epoch,
-#     validation_data=val_dataset,
-#     # validation_steps=validation_steps,
-#     callbacks=callbacks + [LrLogger()],
-# )
+history = model.fit(
+    train_dataset,
+    epochs=EPOCHS,
+    # steps_per_epoch=steps_per_epoch,
+    validation_data=val_dataset,
+    # validation_steps=validation_steps,
+    callbacks=callbacks + [LrLogger()],
+)
 
 
 # Evaluate the model on test set
