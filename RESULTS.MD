@@ -73,3 +73,16 @@
 | Enhanced | 0.768 |
 | Improvement | 0.054 |
 **Model:** Phase Reuse on 20M Model on 9 epochs
+
+
+# latest model on 9th epoch
+========== FINAL RESULTS ==========
+SI-SDR (mix): -0.03
+SI-SDR (enh): 5.39
+SI-SDRi:      5.42
+PESQ (mix):   1.603
+PESQ (enh):   1.990
+PESQi:        0.387
+STOI (mix):   0.714
+STOI (enh):   0.780
+STOIi:        0.066
