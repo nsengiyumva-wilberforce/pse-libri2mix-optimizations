@@ -3,7 +3,6 @@ import os
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
-# hide all warnings (including librosa's FutureWarning about np.complex)
 import sys
 import time
 import logging
@@ -77,6 +76,8 @@ from tensorflow.keras.layers import (
     Activation,
     Rescaling,
 )
+from tensorflow.keras import mixed_precision
+
 #--------------------------------
 # HELPERS FOR DATA LOADING
 def load_scp(mix_path, ref_path, tgt_path):
@@ -154,9 +155,9 @@ frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 4
+batch_size = 2
 EPOCHS = 300
-CHUNK_SIZE = 31000  # chunk into 4s
+CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
 TARGET_SR = 8000
 TRAIN_MIX, TRAIN_REF, TRAIN_TGT = load_scp(
@@ -726,37 +727,6 @@ def attention_gate(inp_1, inp_2, n_intermediate_filters):
     return multiply([inp_1, h])
 
 
-def respath(x, filters, depth=4, prefix="rp"):
-    """
-    Exact ResPath as described in the paper:
-    No residual shortcut, just dual-branch conv summation.
-    """
-    for i in range(depth):
-        # 3x3 branch
-        conv3 = Conv2D(
-            filters,
-            (3, 3),
-            padding="same",
-            kernel_initializer="he_normal",
-            name=f"{prefix}_conv3_{i}",
-        )(x)
-        conv3 = BatchNormalization(name=f"{prefix}_bn3_{i}")(conv3)
-        conv3 = Activation("relu")(conv3)
-        # 1x1 branch
-        conv1 = Conv2D(
-            filters,
-            (1, 1),
-            padding="same",
-            kernel_initializer="he_normal",
-            name=f"{prefix}_conv1_{i}",
-        )(x)
-        conv1 = BatchNormalization(name=f"{prefix}_bn1_{i}")(conv1)
-        conv1 = Activation("relu")(conv1)
-        # combine (this is the ONLY merge)
-        x = Add(name=f"{prefix}_add_{i}")([conv3, conv1])
-    return x
-
-
 def upsample_conv(filters, kernel_size, strides, padding):
     return Conv2DTranspose(filters, kernel_size, strides=strides, padding=padding)
 
@@ -1127,7 +1097,7 @@ callbacks = [
     ),
     EarlyStopping(
         monitor="val_loss",
-        patience=20,
+        patience=100,
         min_delta=0.00001,
         restore_best_weights=True,
         verbose=1,
@@ -1246,14 +1216,14 @@ model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-history = model.fit(
-    train_dataset,
-    epochs=EPOCHS,
-    # steps_per_epoch=steps_per_epoch,
-    validation_data=val_dataset,
-    # validation_steps=validation_steps,
-    callbacks=callbacks + [LrLogger()],
-)
+# history = model.fit(
+#     train_dataset,
+#     epochs=EPOCHS,
+#     # steps_per_epoch=steps_per_epoch,
+#     validation_data=val_dataset,
+#     # validation_steps=validation_steps,
+#     callbacks=callbacks + [LrLogger()],
+# )
 
 
 # Evaluate the model on test set
@@ -1333,7 +1303,7 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
     # ==========================================================
     # 🔑 MATCH TRAINING SHAPE
     # ==========================================================
-    CHUNK_LEN = 61680 # MUST match training (change if you trained on 32000)
+    CHUNK_LEN = CHUNK_SIZE # MUST match training (change if you trained on 32000)
     HOP_LEN = int(CHUNK_LEN * (1 - overlap))
 
     REF_LEN = 16000  # already correct (98 frames)
