@@ -88,7 +88,7 @@ STOI (enh):   0.780
 STOIi:        0.066
 
 # on 24 epochs, it starts overfitting:
-========== FINAL RESULTS ==========
+
 SI-SDR (mix): -0.03
 SI-SDR (enh): 6.66
 SI-SDRi:      6.69

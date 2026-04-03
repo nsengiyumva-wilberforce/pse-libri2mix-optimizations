@@ -309,31 +309,45 @@ def complex_to_2ch(spec):
 def sample_reference_segments(wav, K, segment_len):
     wav_len = tf.shape(wav)[0]
 
-    # If too short: pad
     def pad():
         pad_len = segment_len - wav_len
         wav_pad = tf.pad(wav, [[0, pad_len]])
         return tf.tile(tf.expand_dims(wav_pad, 0), [K, 1])
 
-    # If long enough: sample
-    def sample():
-        max_start = wav_len - segment_len
-        starts = tf.random.uniform([K], 0, max_start + 1, dtype=tf.int32)
+    def deterministic():
+        # evenly spaced segments across the utterance
+        starts = tf.linspace(
+            0.0,
+            tf.cast(wav_len - segment_len, tf.float32),
+            K
+        )
+        starts = tf.cast(starts, tf.int32)
+
         return tf.map_fn(
-            lambda s: wav[s : s + segment_len], starts, fn_output_signature=tf.float32
+            lambda s: wav[s:s+segment_len],
+            starts,
+            fn_output_signature=tf.float32
         )
 
-    return tf.cond(wav_len < segment_len, pad, sample)
+    return tf.cond(wav_len < segment_len, pad, deterministic)
 
+def apply_augment(inputs, target):
+    noisy = inputs["noisy_main"]
+    clean = target
 
+    # apply augmentation ONLY to noisy
+    noisy, _ = augment(noisy, clean)
+
+    inputs["noisy_main"] = noisy
+    return inputs, clean
 def load_libri_speech_triplet_multiview(
     mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2
 ):
-    clean = preprocess_tf(tgt_path)
+    clean_uttr = preprocess_tf(tgt_path)
     noisy = preprocess_tf(mix_path)
     ref = preprocess_tf(ref_path)
     mix_chunks = split_into_chunks(noisy, CHUNK_SIZE, STRIDE)
-    clean_chunks = split_into_chunks(clean, CHUNK_SIZE, STRIDE)
+    clean_chunks = split_into_chunks(clean_uttr, CHUNK_SIZE, STRIDE)
     ref_segments = sample_reference_segments(ref, K, ref_len)
     return mix_chunks, ref_segments, clean_chunks
 
@@ -380,6 +394,9 @@ def configure_libri_speech_dataset(
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
+
+    if is_train:
+        ds = ds.map(apply_augment, num_parallel_calls=tf.data.AUTOTUNE)
 
     return ds.prefetch(tf.data.AUTOTUNE)
 
@@ -1098,9 +1115,16 @@ callbacks = [
     ),
     EarlyStopping(
         monitor="val_loss",
-        patience=100,
-        min_delta=0.00001,
+        patience=8,
+        min_delta=1e-5,
         restore_best_weights=True,
+        verbose=1,
+    ),
+    ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.5,
+        patience=3,
+        min_lr=1e-6,
         verbose=1,
     ),
 ]
@@ -1161,70 +1185,72 @@ initial_lr = 1e-4
 alpha = 0.05  # final lr fraction
 
 
-class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, initial_lr, total_steps, warmup_steps, alpha=0.0):
-        self.initial_lr = initial_lr
-        self.total_steps = total_steps
-        self.warmup_steps = warmup_steps
-        self.alpha = alpha
+# class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
+#     def __init__(self, initial_lr, total_steps, warmup_steps, alpha=0.0):
+#         self.initial_lr = initial_lr
+#         self.total_steps = total_steps
+#         self.warmup_steps = warmup_steps
+#         self.alpha = alpha
 
-    def __call__(self, step):
-        step = tf.cast(step, tf.float32)
-        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
-        total_steps = tf.cast(self.total_steps, tf.float32)
+#     def __call__(self, step):
+#         step = tf.cast(step, tf.float32)
+#         warmup_steps = tf.cast(self.warmup_steps, tf.float32)
+#         total_steps = tf.cast(self.total_steps, tf.float32)
 
-        def warmup_lr():
-            return self.initial_lr * step / warmup_steps
+#         def warmup_lr():
+#             return self.initial_lr * step / warmup_steps
 
-        def decay_lr():
-            progress = (step - warmup_steps) / (total_steps - warmup_steps)
-            progress = tf.clip_by_value(progress, 0.0, 1.0)
-            cosine_decay = 0.5 * (1 + tf.cos(tf.constant(math.pi) * progress))
-            decayed = (1 - self.alpha) * cosine_decay + self.alpha
-            return self.initial_lr * decayed
+#         def decay_lr():
+#             progress = (step - warmup_steps) / (total_steps - warmup_steps)
+#             progress = tf.clip_by_value(progress, 0.0, 1.0)
+#             cosine_decay = 0.5 * (1 + tf.cos(tf.constant(math.pi) * progress))
+#             decayed = (1 - self.alpha) * cosine_decay + self.alpha
+#             return self.initial_lr * decayed
 
-        return tf.cond(step < warmup_steps, warmup_lr, decay_lr)
+#         return tf.cond(step < warmup_steps, warmup_lr, decay_lr)
 
-    def get_config(self):
-        return {
-            "initial_lr": self.initial_lr,
-            "total_steps": self.total_steps,
-            "warmup_steps": self.warmup_steps,
-            "alpha": self.alpha,
-        }
-
-
-class LrLogger(tf.keras.callbacks.Callback):
-    def on_epoch_end(self, epoch, logs=None):
-        lr = self.model.optimizer.learning_rate
-        if isinstance(lr, tf.keras.optimizers.schedules.LearningRateSchedule):
-            lr = lr(tf.cast(self.model.optimizer.iterations, tf.float32))
-        print(f"Epoch {epoch+1}: Learning rate = {lr.numpy():.6f}")
+#     def get_config(self):
+#         return {
+#             "initial_lr": self.initial_lr,
+#             "total_steps": self.total_steps,
+#             "warmup_steps": self.warmup_steps,
+#             "alpha": self.alpha,
+#         }
 
 
-lr_schedule = WarmupCosineDecay(
-    initial_lr=initial_lr,
-    total_steps=total_steps,
-    warmup_steps=warmup_steps,
-    alpha=alpha,
-)
+# class LrLogger(tf.keras.callbacks.Callback):
+#     def on_epoch_end(self, epoch, logs=None):
+#         lr = self.model.optimizer.learning_rate
+#         if isinstance(lr, tf.keras.optimizers.schedules.LearningRateSchedule):
+#             lr = lr(tf.cast(self.model.optimizer.iterations, tf.float32))
+#         print(f"Epoch {epoch+1}: Learning rate = {lr.numpy():.6f}")
+
+
+# lr_schedule = WarmupCosineDecay(
+#     initial_lr=initial_lr,
+#     total_steps=total_steps,
+#     warmup_steps=warmup_steps,
+#     alpha=alpha,
+# )
 
 optimizer = tf.keras.optimizers.Adam(
-    learning_rate=lr_schedule, weight_decay=1e-3, clipnorm=1.0
+    learning_rate=1e-4,
+    weight_decay=1e-3,
+    clipnorm=1.0,
 )
 
 model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-# history = model.fit(
-#     train_dataset,
-#     epochs=EPOCHS,
-#     # steps_per_epoch=steps_per_epoch,
-#     validation_data=val_dataset,
-#     # validation_steps=validation_steps,
-#     callbacks=callbacks + [LrLogger()],
-# )
+history = model.fit(
+    train_dataset,
+    epochs=EPOCHS,
+    # steps_per_epoch=steps_per_epoch,
+    validation_data=val_dataset,
+    # validation_steps=validation_steps,
+    callbacks=callbacks,
+)
 
 
 # Evaluate the model on test set
