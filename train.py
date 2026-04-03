@@ -279,19 +279,38 @@ def spectrogram_abs(spectrogram_corr, spectrogram):
     return spectrogram_corr, spectrogram
 
 
+# @tf.function
+# def augment(spectrogram_corr, spectrogram):
+#     real_c, imag_c = spectrogram_corr[..., 0], spectrogram_corr[..., 1]
+#     real_t, imag_t = spectrogram[..., 0], spectrogram[..., 1]
+#     # apply the same augmentation to real and imaginary parts
+#     real_c = tfio.audio.freq_mask(real_c, 10)
+#     real_c = tfio.audio.freq_mask(real_c, 10)
+#     real_c = tfio.audio.time_mask(real_c, 20)
+#     real_c = tfio.audio.time_mask(real_c, 20)
+#     spectrogram_corr = tf.stack([real_c, imag_c], axis=-1)
+#     spectrogram_clean = tf.stack([real_t, imag_t], axis=-1)
+
+#     return spectrogram_corr, spectrogram_clean
+
 @tf.function
 def augment(spectrogram_corr, spectrogram):
     real_c, imag_c = spectrogram_corr[..., 0], spectrogram_corr[..., 1]
-    real_t, imag_t = spectrogram[..., 0], spectrogram[..., 1]
-    # apply the same augmentation to real and imaginary parts
-    real_c = tfio.audio.freq_mask(real_c, 10)
-    real_c = tfio.audio.freq_mask(real_c, 10)
-    real_c = tfio.audio.time_mask(real_c, 20)
-    real_c = tfio.audio.time_mask(real_c, 20)
-    spectrogram_corr = tf.stack([real_c, imag_c], axis=-1)
-    spectrogram_clean = tf.stack([real_t, imag_t], axis=-1)
 
-    return spectrogram_corr, spectrogram_clean
+    # Apply SAME masks to both real & imag
+    mask = tf.ones_like(real_c)
+
+    mask = tfio.audio.freq_mask(mask, 10)
+    mask = tfio.audio.freq_mask(mask, 10)
+    mask = tfio.audio.time_mask(mask, 20)
+    mask = tfio.audio.time_mask(mask, 20)
+
+    real_c = real_c * mask
+    imag_c = imag_c * mask
+
+    spectrogram_corr = tf.stack([real_c, imag_c], axis=-1)
+
+    return spectrogram_corr, spectrogram
 
 
 @tf.function
