@@ -1266,7 +1266,7 @@ model = tf.keras.models.load_model(
     custom_objects={
         "sLSTMCell": sLSTMCell,
         "mLSTMCell": mLSTMCell,
-        "WarmupCosineDecay": WarmupCosineDecay,
+        # "WarmupCosineDecay": WarmupCosineDecay,
         "complex_enhancement_loss_pc": complex_enhancement_loss_pc,
     }
 )
