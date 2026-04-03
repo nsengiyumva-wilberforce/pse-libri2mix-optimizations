@@ -1,8 +1,15 @@
 import os
 
 import warnings
-warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
-warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
+
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=".*unable to load libtensorflow_io_plugins.so.*",
+)
+warnings.filterwarnings(
+    "ignore", category=UserWarning, message=".*file system plugins are not loaded.*"
+)
 import sys
 import time
 import logging
@@ -14,6 +21,7 @@ from pystoi import stoi
 import csv
 
 import warnings
+
 warnings.filterwarnings("ignore")
 import pandas as pd
 import numpy as np
@@ -53,6 +61,7 @@ from tensorflow.keras.layers import (
     LayerNormalization,
     UpSampling2D,
     RNN,
+    Conv1D,
     DepthwiseConv2D,
     Add,
     Multiply,
@@ -79,7 +88,7 @@ from tensorflow.keras.layers import (
 tf.config.optimizer.set_jit(True)
 
 
-#--------------------------------
+# --------------------------------
 # HELPERS FOR DATA LOADING
 def load_scp(mix_path, ref_path, tgt_path):
     """
@@ -158,7 +167,7 @@ trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
 batch_size = 4
 EPOCHS = 300
-CHUNK_SIZE = 31000 # chunk into 4s
+CHUNK_SIZE = 31000  # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
 TARGET_SR = 8000
 TRAIN_MIX, TRAIN_REF, TRAIN_TGT = load_scp(
@@ -293,6 +302,7 @@ def spectrogram_abs(spectrogram_corr, spectrogram):
 
 #     return spectrogram_corr, spectrogram_clean
 
+
 @tf.function
 def augment(spectrogram_corr, spectrogram):
     real_c, imag_c = spectrogram_corr[..., 0], spectrogram_corr[..., 1]
@@ -335,20 +345,15 @@ def sample_reference_segments(wav, K, segment_len):
 
     def deterministic():
         # evenly spaced segments across the utterance
-        starts = tf.linspace(
-            0.0,
-            tf.cast(wav_len - segment_len, tf.float32),
-            K
-        )
+        starts = tf.linspace(0.0, tf.cast(wav_len - segment_len, tf.float32), K)
         starts = tf.cast(starts, tf.int32)
 
         return tf.map_fn(
-            lambda s: wav[s:s+segment_len],
-            starts,
-            fn_output_signature=tf.float32
+            lambda s: wav[s : s + segment_len], starts, fn_output_signature=tf.float32
         )
 
     return tf.cond(wav_len < segment_len, pad, deterministic)
+
 
 def apply_augment(inputs, target):
     noisy = inputs["noisy_main"]
@@ -359,6 +364,8 @@ def apply_augment(inputs, target):
 
     inputs["noisy_main"] = noisy
     return inputs, clean
+
+
 def load_libri_speech_triplet_multiview(
     mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2
 ):
@@ -386,9 +393,11 @@ def configure_libri_speech_dataset(
 
     # 2. Flatten chunks (parallelized)
     ds = ds.interleave(
-        lambda mix_chunks, ref_segments, clean_chunks:
-            tf.data.Dataset.from_tensor_slices((mix_chunks, clean_chunks))
-            .map(lambda m, c: (m, ref_segments, c)),
+        lambda mix_chunks, ref_segments, clean_chunks: tf.data.Dataset.from_tensor_slices(
+            (mix_chunks, clean_chunks)
+        ).map(
+            lambda m, c: (m, ref_segments, c)
+        ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
 
@@ -699,37 +708,167 @@ class mLSTMCell(Layer):
         ]
 
 
-def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="xlstm"):
-    """
-    Add xLSTM blocks with unique names using the prefix argument.
-    """
+def gated_mlp(x, hidden_dim, expansion=4, prefix="mlp"):
+    expanded_dim = hidden_dim * expansion
+
+    gate = Dense(expanded_dim, activation="sigmoid", name=f"{prefix}_gate")(x)
+    value = Dense(expanded_dim, activation="gelu", name=f"{prefix}_value")(x)
+
+    x = gate * value
+    x = Dense(hidden_dim, name=f"{prefix}_down")(x)
+    return x
+
+
+def depthwise_conv1d(x, kernel_size=3, prefix="conv"):
+    channels = x.shape[-1]
+    return Conv1D(
+        filters=channels,
+        kernel_size=kernel_size,
+        padding="same",
+        groups=channels,  # depthwise
+        name=f"{prefix}_dw"
+    )(x)
+
+
+def add_xlstm_block(
+    x,
+    hidden_dim=256,
+    num_layers=2,
+    block_types=None,
+    expansion=4,
+    m_expansion=2,
+    max_m_dim=1024,
+    dropout=0.2,
+    prefix="xlstm"
+):
     if block_types is None:
         block_types = ["sLSTM", "mLSTM"] * ((num_layers + 1) // 2)
         block_types = block_types[:num_layers]
-    
+
+    expanded_dim = hidden_dim * expansion
+
     for i, block_type in enumerate(block_types):
         residual = x
-        
-        if block_type == 'sLSTM':
-            cell = sLSTMCell(hidden_dim, forget_gate_type='sigmoid')
-        elif block_type == 'mLSTM':
-            cell = mLSTMCell(hidden_dim, forget_gate_type='sigmoid')
+        applied_residual = False
+
+        # =========================
+        # sLSTM BLOCK (Transformer-style)
+        # =========================
+        if block_type == "sLSTM":
+            # Core recurrent unit
+            cell = sLSTMCell(hidden_dim, forget_gate_type="sigmoid")
+            x_lstm = RNN(
+                cell,
+                return_sequences=True,
+                name=f"{prefix}_sLSTM_{i}"
+            )(x)
+
+            # Local mixing (conv)
+            x_lstm = depthwise_conv1d(
+                x_lstm, prefix=f"{prefix}_sconv_{i}"
+            )
+
+            # Gated MLP (post projection)
+            x = gated_mlp(
+                x_lstm,
+                hidden_dim,
+                expansion=expansion,
+                prefix=f"{prefix}_smlp_{i}"
+            )
+
+        # =========================
+        # mLSTM BLOCK (SSM-style)
+        # =========================
+        elif block_type == "mLSTM":
+            # Keep mLSTM dimensionality bounded because memory state is O(d^2)
+            m_dim = hidden_dim * m_expansion
+            if max_m_dim is not None:
+                m_dim = min(m_dim, max_m_dim)
+
+            # Pre up-projection
+            x_up = Dense(
+                m_dim,
+                name=f"{prefix}_mup_{i}"
+            )(x)
+
+            # Pre-MLP (important in paper)
+            x_up = gated_mlp(
+                x_up,
+                m_dim,
+                expansion=1,  # already expanded
+                prefix=f"{prefix}_mpremlp_{i}"
+            )
+
+            # Core recurrent unit (high-dim)
+            cell = mLSTMCell(m_dim, forget_gate_type="sigmoid")
+            x_lstm = RNN(
+                cell,
+                return_sequences=True,
+                name=f"{prefix}_mLSTM_{i}"
+            )(x_up)
+
+            # Local mixing
+            x_lstm = depthwise_conv1d(
+                x_lstm, prefix=f"{prefix}_mconv_{i}"
+            )
+
+            # Output gate (critical)
+            gate = Dense(
+                m_dim,
+                activation="sigmoid",
+                name=f"{prefix}_mgate_{i}"
+            )(x_lstm)
+
+            x_lstm = x_lstm * gate
+
+            # Post-MLP
+            x_lstm = gated_mlp(
+                x_lstm,
+                m_dim,
+                expansion=1,
+                prefix=f"{prefix}_mpostmlp_{i}"
+            )
+
+            # Down projection
+            x = Dense(
+                hidden_dim,
+                name=f"{prefix}_mdown_{i}"
+            )(x_lstm)
+
+            # Learnable skip connection (paper-style mLSTM block)
+            skip = Dense(hidden_dim, name=f"{prefix}_mskip_{i}")(residual)
+            skip_gate = Dense(
+                hidden_dim,
+                activation="sigmoid",
+                name=f"{prefix}_mskip_gate_{i}"
+            )(residual)
+            skip = Multiply(name=f"{prefix}_mskip_mul_{i}")([skip, skip_gate])
+            x = Add(name=f"{prefix}_madd_{i}")([x, skip])
+            applied_residual = True
+
         else:
             raise ValueError(f"Unknown block type: {block_type}")
-        
-        # Unique name using the prefix and index
-        x = RNN(cell, return_sequences=True, 
-                name=f'{prefix}_{block_type}_{i}')(x)
-        
-        if residual.shape[-1] == x.shape[-1]:
-            # Names for operations like Add and LayerNorm are usually auto-generated,
-            # but you can name them too if you want total safety:
-            x = Add(name=f'{prefix}_add_{i}')([residual, x])
-            x = LayerNormalization(epsilon=1e-6, name=f'{prefix}_ln_{i}')(x)
-        
+
+        # =========================
+        # Residual + Norm
+        # =========================
+        if (not applied_residual) and (x.shape[-1] == residual.shape[-1]):
+            x = Add(name=f"{prefix}_add_{i}")([residual, x])
+
+        x = LayerNormalization(
+            epsilon=1e-6,
+            name=f"{prefix}_ln_{i}"
+        )(x)
+
+        # =========================
+        # Dropout
+        # =========================
         if i < num_layers - 1:
-            x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
-    
+            x = Dropout(
+                dropout,
+                name=f"{prefix}_do_{i}"
+            )(x)
+
     return x
 
 
@@ -887,20 +1026,29 @@ def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
     attn_map = Reshape((T, F, C))(attn)
     # Residual modulation
     return x + attn_map
-    
+
+
 def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
     # ---- Frequency branch (1 x 3) ----
-    f_branch = Conv2D(filters, (1, 3), padding="same",
-                      kernel_initializer="he_normal",
-                      name=f"{name_prefix}_fconv")(x)
+    f_branch = Conv2D(
+        filters,
+        (1, 3),
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_fconv",
+    )(x)
     if use_bn:
         f_branch = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
     f_branch = Activation(activation)(f_branch)
 
     # ---- Time branch (3 x 1) ----
-    t_branch = Conv2D(filters, (3, 1), padding="same",
-                      kernel_initializer="he_normal",
-                      name=f"{name_prefix}_tconv")(x)
+    t_branch = Conv2D(
+        filters,
+        (3, 1),
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_tconv",
+    )(x)
     if use_bn:
         t_branch = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
     t_branch = Activation(activation)(t_branch)
@@ -909,13 +1057,20 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
     x = Concatenate(name=f"{name_prefix}_concat")([f_branch, t_branch])
 
     # ---- Separable TF mixing ----
-    x = DepthwiseConv2D((3,3), padding="same",
-                        depthwise_initializer="he_normal",
-                        name=f"{name_prefix}_dw")(x)
+    x = DepthwiseConv2D(
+        (3, 3),
+        padding="same",
+        depthwise_initializer="he_normal",
+        name=f"{name_prefix}_dw",
+    )(x)
 
-    x = Conv2D(filters, 1, padding="same",
-               kernel_initializer="he_normal",
-               name=f"{name_prefix}_pw")(x)
+    x = Conv2D(
+        filters,
+        1,
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_pw",
+    )(x)
 
     if use_bn:
         x = BatchNormalization(name=f"{name_prefix}_pw_bn")(x)
@@ -923,14 +1078,19 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
     x = Activation(activation)(x)
 
     # ---- Joint TF modeling ----
-    x = Conv2D(filters, (3, 3), padding="same",
-               kernel_initializer="he_normal",
-               name=f"{name_prefix}_joint")(x)
+    x = Conv2D(
+        filters,
+        (3, 3),
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_joint",
+    )(x)
     if use_bn:
         x = BatchNormalization(name=f"{name_prefix}_jbn")(x)
     x = Activation(activation)(x)
 
     return x
+
 
 def plot_spectrogram(spectrogram, ax):
     log_spec = np.log(spectrogram.T + np.finfo(float).eps)
@@ -979,7 +1139,9 @@ def custom_unet(
         #     dropout_type=dropout_type,
         #     activation=activation,
         # )
-        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        x = tf_alternating_block(
+            x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}"
+        )
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
         dropout += dropout_change_per_layer
@@ -1016,7 +1178,9 @@ def custom_unet(
     # ref_seq = add_gru_block(
     #     ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
     # )
-    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
+    ref_seq = add_xlstm_block(
+        ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
+    )
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
 
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
@@ -1089,15 +1253,13 @@ def custom_unet(
     mask_i = 5.0 * ops.tanh(mask_i / 5.0)
 
     # --- Complex multiplication ---
-    out_r = layers.Subtract()([
-        layers.Multiply()([mask_r, input_r]),
-        layers.Multiply()([mask_i, input_i])
-    ])
+    out_r = layers.Subtract()(
+        [layers.Multiply()([mask_r, input_r]), layers.Multiply()([mask_i, input_i])]
+    )
 
-    out_i = layers.Add()([
-        layers.Multiply()([mask_r, input_i]),
-        layers.Multiply()([mask_i, input_r])
-    ])
+    out_i = layers.Add()(
+        [layers.Multiply()([mask_r, input_i]), layers.Multiply()([mask_i, input_r])]
+    )
 
     # --- Residual connection (very important) ---
     out_r = layers.Add()([input_r, out_r])
@@ -1109,9 +1271,7 @@ def custom_unet(
     return Model(inputs=[main_input, ref_input], outputs=[outputs])
 
 
-model_filename = (
-    "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
-)
+model_filename = "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
 model = custom_unet(
     input_shape=(192, 256, 2),
     use_batch_norm=True,
@@ -1163,13 +1323,15 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
     # 2. Compressed Complex Loss (Handles Phase implicitly and stably)
     # This transforms the complex values into the compressed domain
     # Formula: (r + ji) / |mag| * |mag|^gamma = (r + ji) * |mag|^(gamma-1)
-    factor_t = mag_t**(gamma - 1)
-    factor_p = mag_p**(gamma - 1)
-    
+    factor_t = mag_t ** (gamma - 1)
+    factor_p = mag_p ** (gamma - 1)
+
     c_real_t, c_imag_t = r_t * factor_t, i_t * factor_t
     c_real_p, c_imag_p = r_p * factor_p, i_p * factor_p
-    
-    complex_loss = tf.reduce_mean(tf.abs(c_real_t - c_real_p) + tf.abs(c_imag_t - c_imag_p))
+
+    complex_loss = tf.reduce_mean(
+        tf.abs(c_real_t - c_real_p) + tf.abs(c_imag_t - c_imag_p)
+    )
 
     # 3. Temporal Consistency (Delta Loss)
     # Using the compressed magnitude for delta often yields better PESQ
@@ -1177,25 +1339,31 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
     delta_mag_p = mag_p[:, 1:, :] - mag_p[:, :-1, :]
     consistency_loss = tf.reduce_mean(tf.square(delta_mag_t - delta_mag_p))
 
-    # 4. Scale-Invariant Signal-to-Noise Ratio (SI-SNR) 
+    # 4. Scale-Invariant Signal-to-Noise Ratio (SI-SNR)
     # Much more stable than a custom SI-L1 loss
     t_flat = tf.reshape(y_true, [tf.shape(y_true)[0], -1])
     p_flat = tf.reshape(y_pred, [tf.shape(y_pred)[0], -1])
-    
+
     dot = tf.reduce_sum(t_flat * p_flat, axis=1, keepdims=True)
     snr_norm = tf.reduce_sum(t_flat**2, axis=1, keepdims=True) + eps
     target_proj = (dot / snr_norm) * t_flat
-    
-    noise_res = p_flat - target_proj
-    si_snr = 10 * tf.math.log(tf.reduce_sum(target_proj**2, axis=1) / 
-                             (tf.reduce_sum(noise_res**2, axis=1) + eps) + eps) / tf.math.log(10.0)
-    
-    si_loss = -tf.reduce_mean(si_snr) # Negative because we want to maximize SNR
 
-    return (1.0 * mag_loss + 
-            1.0 * complex_loss + 
-            0.5 * consistency_loss + 
-            2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
+    noise_res = p_flat - target_proj
+    si_snr = (
+        10
+        * tf.math.log(
+            tf.reduce_sum(target_proj**2, axis=1)
+            / (tf.reduce_sum(noise_res**2, axis=1) + eps)
+            + eps
+        )
+        / tf.math.log(10.0)
+    )
+
+    si_loss = -tf.reduce_mean(si_snr)  # Negative because we want to maximize SNR
+
+    return (
+        1.0 * mag_loss + 1.0 * complex_loss + 0.5 * consistency_loss + 2.0 * si_loss
+    )  # SI-SNR scale is much larger, so weight it lower
 
 
 total_steps = steps_per_epoch * EPOCHS
@@ -1287,7 +1455,7 @@ model = tf.keras.models.load_model(
         "mLSTMCell": mLSTMCell,
         # "WarmupCosineDecay": WarmupCosineDecay,
         "complex_enhancement_loss_pc": complex_enhancement_loss_pc,
-    }
+    },
 )
 model.trainable = False
 print("Model loaded for inference")
@@ -1349,7 +1517,7 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
     # ==========================================================
     # 🔑 MATCH TRAINING SHAPE
     # ==========================================================
-    CHUNK_LEN = CHUNK_SIZE # MUST match training (change if you trained on 32000)
+    CHUNK_LEN = CHUNK_SIZE  # MUST match training (change if you trained on 32000)
     HOP_LEN = int(CHUNK_LEN * (1 - overlap))
 
     REF_LEN = 16000  # already correct (98 frames)
