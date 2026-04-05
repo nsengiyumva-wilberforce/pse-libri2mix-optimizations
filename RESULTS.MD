@@ -99,3 +99,14 @@ STOI (mix):   0.714
 STOI (enh):   0.801
 STOIi:        0.087
 
+# on 66 epochs model 45M params
+========== FINAL RESULTS ==========
+SI-SDR (mix): -0.03
+SI-SDR (enh): 6.63
+SI-SDRi:      6.66
+PESQ (mix):   1.603
+PESQ (enh):   2.147
+PESQi:        0.545
+STOI (mix):   0.714
+STOI (enh):   0.799
+STOIi:        0.085
