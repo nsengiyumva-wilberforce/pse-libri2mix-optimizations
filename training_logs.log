@@ -1,0 +1,187 @@
+Epoch 1: val_loss improved from None to -3.79707, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 1: Learning rate = 0.000043
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6731s 222ms/step - loss: 0.4764 - val_loss: -3.7971
+Epoch 2/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -5.78432026-04-10 00:37:39.251622: W tensorflow/core/kernels/data/prefetch_autotuner.cc:55] Prefetch autotuner tried to allocate 8896512 bytes after encountering the first element of size 8896512 bytes.This already causes the autotune ram budget to be exceeded. To stay within the ram budget, either increase the ram budget or reduce element size
+2026-04-10 00:40:03.319356: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
+	 [[{{node IteratorGetNext}}]]
+2026-04-10 00:40:03.319429: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 00:40:03.319443: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 2: val_loss improved from -3.79707 to -5.98002, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 2: Learning rate = 0.000086
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6528s 217ms/step - loss: -6.9462 - val_loss: -5.9800
+Epoch 3/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -8.48392026-04-10 02:28:49.551862: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+
+Epoch 3: val_loss improved from -5.98002 to -7.35111, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 3: Learning rate = 0.000100
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6527s 217ms/step - loss: -9.4659 - val_loss: -7.3511
+Epoch 4/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -10.66012026-04-10 04:17:39.122551: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
+	 [[{{node IteratorGetNext}}]]
+
+Epoch 4: val_loss improved from -7.35111 to -9.95193, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 4: Learning rate = 0.000100
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6529s 218ms/step - loss: -11.5194 - val_loss: -9.9519
+Epoch 5/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -12.39402026-04-10 06:04:02.052018: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+
+Epoch 5: val_loss did not improve from -9.95193
+Epoch 5: Learning rate = 0.000100
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6526s 217ms/step - loss: -13.2757 - val_loss: -9.7861
+Epoch 6/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -13.83982026-04-10 07:52:49.904276: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-10 07:55:14.125620: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 07:55:14.125672: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 6: val_loss improved from -9.95193 to -11.12604, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 6: Learning rate = 0.000099
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6529s 218ms/step - loss: -14.6724 - val_loss: -11.1260
+Epoch 7/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 216ms/step - loss: -15.10502026-04-10 09:43:25.177820: W tensorflow/core/kernels/data/prefetch_autotuner.cc:55] Prefetch autotuner tried to allocate 8896512 bytes after encountering the first element of size 8896512 bytes.This already causes the autotune ram budget to be exceeded. To stay within the ram budget, either increase the ram budget or reduce element size
+
+Epoch 7: val_loss improved from -11.12604 to -11.81817, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 7: Learning rate = 0.000099
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6636s 221ms/step - loss: -15.8520 - val_loss: -11.8182
+Epoch 8/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 219ms/step - loss: -16.10092026-04-10 11:35:15.041485: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-10 11:37:41.949117: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
+	 [[{{node IteratorGetNext}}]]
+
+Epoch 8: val_loss improved from -11.81817 to -12.41763, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 8: Learning rate = 0.000098
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6711s 224ms/step - loss: -16.7927 - val_loss: -12.4176
+Epoch 9/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 217ms/step - loss: -17.05802026-04-10 13:26:14.137819: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+
+Epoch 9: val_loss did not improve from -12.41763
+Epoch 9: Learning rate = 0.000098
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6661s 222ms/step - loss: -17.6927 - val_loss: -12.1339
+Epoch 10/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 221ms/step - loss: -17.66092026-04-10 15:19:26.878008: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-10 15:19:26.879117: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 15:19:26.879175: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 10: val_loss did not improve from -12.41763
+Epoch 10: Learning rate = 0.000097
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6792s 226ms/step - loss: -18.3726 - val_loss: -12.1887
+Epoch 11/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 221ms/step - loss: -18.44602026-04-10 17:12:38.729877: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-10 17:12:38.730967: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 17:12:38.730984: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+2026-04-10 17:15:08.265724: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 17:15:08.265786: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 11: val_loss improved from -12.41763 to -12.73479, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 11: Learning rate = 0.000096
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6793s 226ms/step - loss: -19.1494 - val_loss: -12.7348
+Epoch 12/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 219ms/step - loss: -19.21452026-04-10 19:04:38.077701: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-10 19:07:06.043921: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 19:07:06.044025: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 12: val_loss improved from -12.73479 to -13.76444, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 12: Learning rate = 0.000095
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6718s 224ms/step - loss: -19.7975 - val_loss: -13.7644
+Epoch 13/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 218ms/step - loss: -19.82802026-04-10 20:56:14.923811: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-10 20:56:14.923847: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 20:56:14.923859: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+2026-04-10 20:58:40.082325: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 20:58:40.082380: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 13: val_loss did not improve from -13.76444
+Epoch 13: Learning rate = 0.000094
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6693s 223ms/step - loss: -20.4156 - val_loss: -13.1478
+Epoch 14/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -20.37542026-04-10 22:47:49.914246: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-10 22:47:49.914328: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 14: val_loss improved from -13.76444 to -13.82301, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 14: Learning rate = 0.000093
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6551s 218ms/step - loss: -20.9427 - val_loss: -13.8230
+Epoch 15/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 214ms/step - loss: -20.93012026-04-11 00:34:55.327723: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-11 00:37:19.980501: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 00:37:19.980550: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 15: val_loss improved from -13.82301 to -13.98422, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 15: Learning rate = 0.000092
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6570s 219ms/step - loss: -21.4421 - val_loss: -13.9842
+Epoch 16/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 214ms/step - loss: -21.28132026-04-11 02:26:47.047713: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
+	 [[{{node IteratorGetNext}}]]
+2026-04-11 02:26:47.047788: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 02:26:47.047800: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 16: val_loss did not improve from -13.98422
+Epoch 16: Learning rate = 0.000091
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6566s 219ms/step - loss: -21.8494 - val_loss: -13.6996
+Epoch 17/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 214ms/step - loss: -21.78092026-04-11 04:16:07.431446: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-11 04:16:07.431463: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 04:16:07.431471: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 17: val_loss did not improve from -13.98422
+Epoch 17: Learning rate = 0.000089
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6560s 219ms/step - loss: -22.2944 - val_loss: -13.3810
+Epoch 18/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 212ms/step - loss: -22.25602026-04-11 06:02:14.459500: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+
+Epoch 18: val_loss improved from -13.98422 to -14.00659, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 18: Learning rate = 0.000088
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6511s 217ms/step - loss: -22.7342 - val_loss: -14.0066
+Epoch 19/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 212ms/step - loss: -22.6200     
+Epoch 19: val_loss did not improve from -14.00659
+Epoch 19: Learning rate = 0.000086
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6506s 217ms/step - loss: -23.0939 - val_loss: -12.7247
+Epoch 20/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 212ms/step - loss: -22.9828     
+Epoch 20: val_loss improved from -14.00659 to -14.43695, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
+Epoch 20: Learning rate = 0.000085
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6508s 217ms/step - loss: -23.4355 - val_loss: -14.4369
+Epoch 21/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -23.31882026-04-11 11:28:14.473217: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-11 11:28:14.474075: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 11:28:14.474133: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 21: val_loss did not improve from -14.43695
+Epoch 21: Learning rate = 0.000083
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6547s 218ms/step - loss: -23.7674 - val_loss: -13.3816
+Epoch 22/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -23.60482026-04-11 13:17:15.285377: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+
+Epoch 22: val_loss did not improve from -14.43695
+Epoch 22: Learning rate = 0.000081
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6541s 218ms/step - loss: -24.0776 - val_loss: -13.6088
+Epoch 23/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 213ms/step - loss: -23.89332026-04-11 15:08:43.046326: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 15:08:43.046390: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 23: val_loss did not improve from -14.43695
+Epoch 23: Learning rate = 0.000079
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6542s 218ms/step - loss: -24.3426 - val_loss: -13.2919
+Epoch 24/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 221ms/step - loss: -24.17662026-04-11 16:59:03.009832: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-11 16:59:03.010744: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 16:59:03.011008: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+2026-04-11 17:01:24.324272: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-11 17:01:24.325160: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 17:01:24.325169: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 24: val_loss did not improve from -14.43695
+Epoch 24: Learning rate = 0.000078
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6761s 225ms/step - loss: -24.6184 - val_loss: -13.3567
+Epoch 25/300
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 0s 221ms/step - loss: -24.42362026-04-11 18:51:50.736117: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-11 18:51:50.737529: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 18:51:50.737596: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+2026-04-11 18:54:14.715321: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7742292887322882895
+2026-04-11 18:54:14.716702: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 3834133944136848559
+2026-04-11 18:54:14.716735: I tensorflow/core/framework/local_rendezvous.cc:426] Local rendezvous recv item cancelled. Key hash: 7335453297999895611
+
+Epoch 25: val_loss did not improve from -14.43695
+Epoch 25: Learning rate = 0.000076
+30001/30001 ━━━━━━━━━━━━━━━━━━━━ 6770s 226ms/step - loss: -24.8786 - val_loss: -14.3166
