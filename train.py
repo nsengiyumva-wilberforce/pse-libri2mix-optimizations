@@ -156,7 +156,7 @@ frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 4
+batch_size = 2
 EPOCHS = 300
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
@@ -327,7 +327,7 @@ def sample_reference_segments(wav, K, segment_len):
 
 
 def load_libri_speech_triplet_multiview(
-    mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2
+    mix_path, ref_path, tgt_path, K=6, ref_len=8000 * 6
 ):
     clean = preprocess_tf(tgt_path)
     noisy = preprocess_tf(mix_path)
@@ -339,7 +339,7 @@ def load_libri_speech_triplet_multiview(
 
 
 def configure_libri_speech_dataset(
-    mixture_files, reference_files, target_files, is_train=True, K=4
+    mixture_files, reference_files, target_files, is_train=True, K=6
 ):
     ds = tf.data.Dataset.from_tensor_slices(
         (mixture_files, reference_files, target_files)
@@ -926,7 +926,7 @@ def custom_unet(
         upsample = upsample_simple
 
     main_input = Input(input_shape, name="noisy_main")  # (T, F, C)
-    ref_input = Input((4, 98, 256, 2), name="noisy_ref")
+    ref_input = Input((None, None, 256, 2), name="noisy_ref")
     main_input_copy = ops.copy(main_input)
 
     x = main_input / (ops.std(main_input) + 1e-5)
@@ -1083,7 +1083,7 @@ model = custom_unet(
     filters=32,
     use_dropout_on_upsampling=False,
     num_layers=4,
-    use_attention=False,
+    use_attention=True,
     upsample_mode="deconv",
     dropout=0.2,
     output_activation="sigmoid",
@@ -1217,14 +1217,14 @@ model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-# history = model.fit(
-#     train_dataset,
-#     epochs=EPOCHS,
-#     # steps_per_epoch=steps_per_epoch,
-#     validation_data=val_dataset,
-#     # validation_steps=validation_steps,
-#     callbacks=callbacks + [LrLogger()],
-# )
+history = model.fit(
+    train_dataset,
+    epochs=EPOCHS,
+    # steps_per_epoch=steps_per_epoch,
+    validation_data=val_dataset,
+    # validation_steps=validation_steps,
+    callbacks=callbacks + [LrLogger()],
+)
 
 
 # Evaluate the model on test set
@@ -1284,7 +1284,7 @@ def sample_reference_segments_full(wav, K, segment_len):
     )
 
 
-def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
+def enhance_audio_consistent(noisy_wav, ref_wav, model, K=6, overlap=0.5):
     """
     Inference aligned with training distribution.
     - Waveform chunking
@@ -1329,7 +1329,7 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
             fft_length=n_fft,
         ),
         ref_segments,
-        fn_output_signature=tf.TensorSpec(shape=[98, 256], dtype=tf.complex64),
+        fn_output_signature=tf.TensorSpec(shape=[298, 256], dtype=tf.complex64),
     )
 
     ref_specs = complex_to_2ch(ref_specs_complex)[None, ...]
