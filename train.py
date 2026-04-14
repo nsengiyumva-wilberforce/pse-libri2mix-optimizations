@@ -156,7 +156,7 @@ frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 2
+batch_size = 4
 EPOCHS = 300
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
@@ -327,7 +327,7 @@ def sample_reference_segments(wav, K, segment_len):
 
 
 def load_libri_speech_triplet_multiview(
-    mix_path, ref_path, tgt_path, K=6, ref_len=8000 * 6
+    mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2
 ):
     clean = preprocess_tf(tgt_path)
     noisy = preprocess_tf(mix_path)
@@ -339,7 +339,7 @@ def load_libri_speech_triplet_multiview(
 
 
 def configure_libri_speech_dataset(
-    mixture_files, reference_files, target_files, is_train=True, K=6
+    mixture_files, reference_files, target_files, is_train=True, K=4
 ):
     ds = tf.data.Dataset.from_tensor_slices(
         (mixture_files, reference_files, target_files)
@@ -663,37 +663,160 @@ class mLSTMCell(Layer):
         ]
 
 
-def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="xlstm"):
+def _bounded_projection_dim(base_dim, expansion_ratio, minimum_dim, maximum_dim):
+    """Compute a bounded projection dimension for efficient up/down projections."""
+    projected_dim = int(math.ceil(base_dim * expansion_ratio))
+    projected_dim = max(minimum_dim, projected_dim)
+    projected_dim = min(maximum_dim, projected_dim)
+    return projected_dim
+
+
+def _slstm_post_projection_block(x, hidden_dim, block_index, prefix, expansion_ratio=2.0):
     """
-    Add xLSTM blocks with unique names using the prefix argument.
+    sLSTM residual block with POST up-projection (like Transformers).
+    
+    Paper ordering:
+    1. Non-linearly summarize the past in original space (sLSTM cell)
+    2. Linearly project to higher dimensional space
+    3. Apply non-linear activation (swish)
+    4. Linearly project back to original dimension
+    5. Residual connection + normalization for stability
+    
+    This non-linear summarization followed by projection to high-dim helps separate
+    histories via Cover's Theorem: non-linear patterns are more separable in higher dimensions.
+    """
+    residual = x
+    x = LayerNormalization(epsilon=1e-6, name=f"{prefix}_slstm_pre_ln_{block_index}")(x)
+
+    # Step 1: sLSTM cell (non-linear summarization in original space)
+    cell = sLSTMCell(hidden_dim, forget_gate_type="sigmoid", name=f"{prefix}_slstm_cell_{block_index}")
+    x = RNN(cell, return_sequences=True, name=f"{prefix}_slstm_rnn_{block_index}")(x)
+
+    # Steps 2-4: Post up-projection MLP (expand → activate → contract)
+    expand_dim = _bounded_projection_dim(
+        hidden_dim,
+        expansion_ratio=expansion_ratio,
+        minimum_dim=hidden_dim,
+        maximum_dim=hidden_dim * 2,
+    )
+    x = Dense(expand_dim, activation="swish", name=f"{prefix}_slstm_up_{block_index}")(x)
+    x = Dense(hidden_dim, name=f"{prefix}_slstm_down_{block_index}")(x)
+
+    # Step 5: Residual connection
+    if residual.shape[-1] == x.shape[-1]:
+        x = Add(name=f"{prefix}_slstm_add_{block_index}")([residual, x])
+
+    x = LayerNormalization(epsilon=1e-6, name=f"{prefix}_slstm_post_ln_{block_index}")(x)
+    return x
+
+
+def _mlstm_pre_projection_block(
+    x,
+    hidden_dim,
+    block_index,
+    prefix,
+    expansion_ratio=1.5,
+    maximum_internal_dim=384,
+):
+    """
+    mLSTM residual block with PRE up-projection (like State Space Models).
+    
+    Paper ordering:
+    1. Linearly project to high-dimensional space
+    2. Non-linearly summarize the past IN the high-dimensional space (mLSTM cell)
+    3. Linearly project back to original dimension
+    4. Residual connection + normalization for stability
+    
+    The memory capacity increases in the higher-dimensional space, allowing mLSTM
+    to capture richer patterns. The quadratic memory matrix (d × d) is bounded by
+    maximum_internal_dim to prevent parameter explosion.
+    """
+    residual = x
+    x = LayerNormalization(epsilon=1e-6, name=f"{prefix}_mlstm_pre_ln_{block_index}")(x)
+
+    # Step 1: Linear pre-projection to high-dimensional space
+    internal_dim = _bounded_projection_dim(
+        hidden_dim,
+        expansion_ratio=expansion_ratio,
+        minimum_dim=max(128, hidden_dim // 2),
+        maximum_dim=maximum_internal_dim,
+    )
+    x = Dense(internal_dim, use_bias=False, name=f"{prefix}_mlstm_pre_proj_{block_index}")(x)
+
+    # Step 2: mLSTM cell (non-linear summarization in high-dimensional space)
+    cell = mLSTMCell(internal_dim, forget_gate_type="sigmoid", name=f"{prefix}_mlstm_cell_{block_index}")
+    x = RNN(cell, return_sequences=True, name=f"{prefix}_mlstm_rnn_{block_index}")(x)
+
+    # Step 3: Linear projection back to original dimension
+    x = Dense(hidden_dim, name=f"{prefix}_mlstm_post_proj_{block_index}")(x)
+
+    # Step 4: Residual connection
+    if residual.shape[-1] == x.shape[-1]:
+        x = Add(name=f"{prefix}_mlstm_add_{block_index}")([residual, x])
+
+    x = LayerNormalization(epsilon=1e-6, name=f"{prefix}_mlstm_post_ln_{block_index}")(x)
+    return x
+
+
+def add_xlstm_block(
+    x,
+    hidden_dim=256,
+    num_layers=2,
+    block_types=None,
+    prefix="xlstm",
+    slstm_expansion_ratio=2.0,
+    mlstm_expansion_ratio=1.5,
+    mlstm_max_internal_dim=384,
+):
+    """
+    Add xLSTM residual blocks with paper-aligned projection ordering.
+    
+    This implements the xLSTM architecture as described in the xLSTM paper:
+    
+    sLSTM blocks use POST up-projection:
+      Summarize non-linearly in original space → linearly expand → 
+      non-linearity → linearly contract → residual
+    
+    mLSTM blocks use PRE up-projection:
+      Linearly expand to high-dim → non-linearly summarize in high-dim → 
+      linearly contract → residual
+    
+    The blocks alternate by default, mixing scalar LSTM (sLSTM) for sequential 
+    patterns with matrix LSTM (mLSTM) for richer context. The mLSTM's latent 
+    width is capped to keep the quadratic memory matrix bounded and parameters 
+    from exploding.
+    
+    Based on Cover's Theorem: non-linear patterns become more linearly separable 
+    in higher-dimensional spaces, improving context separation.
     """
     if block_types is None:
         block_types = ["sLSTM", "mLSTM"] * ((num_layers + 1) // 2)
         block_types = block_types[:num_layers]
-    
+
     for i, block_type in enumerate(block_types):
-        residual = x
-        
-        if block_type == 'sLSTM':
-            cell = sLSTMCell(hidden_dim, forget_gate_type='sigmoid')
-        elif block_type == 'mLSTM':
-            cell = mLSTMCell(hidden_dim, forget_gate_type='sigmoid')
+        if block_type == "sLSTM":
+            x = _slstm_post_projection_block(
+                x,
+                hidden_dim=hidden_dim,
+                block_index=i,
+                prefix=prefix,
+                expansion_ratio=slstm_expansion_ratio,
+            )
+        elif block_type == "mLSTM":
+            x = _mlstm_pre_projection_block(
+                x,
+                hidden_dim=hidden_dim,
+                block_index=i,
+                prefix=prefix,
+                expansion_ratio=mlstm_expansion_ratio,
+                maximum_internal_dim=mlstm_max_internal_dim,
+            )
         else:
             raise ValueError(f"Unknown block type: {block_type}")
-        
-        # Unique name using the prefix and index
-        x = RNN(cell, return_sequences=True, 
-                name=f'{prefix}_{block_type}_{i}')(x)
-        
-        if residual.shape[-1] == x.shape[-1]:
-            # Names for operations like Add and LayerNorm are usually auto-generated,
-            # but you can name them too if you want total safety:
-            x = Add(name=f'{prefix}_add_{i}')([residual, x])
-            x = LayerNormalization(epsilon=1e-6, name=f'{prefix}_ln_{i}')(x)
-        
+
         if i < num_layers - 1:
-            x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
-    
+            x = Dropout(0.1, name=f"{prefix}_do_{i}")(x)
+
     return x
 
 
@@ -826,33 +949,102 @@ def conv2d_block(
     return c
 
 
-def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
-    """
-    Cross-attention conditioning.
+# def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
+#     """
+#     Cross-attention conditioning.
 
-    x: (B, T, F, C)
-    speaker_embedding: (B, D)
-    returns: (B, T, F, C)
+#     x: (B, T, F, C)
+#     speaker_embedding: (B, D)
+#     returns: (B, T, F, C)
+#     """
+#     B, T, F, C = x.shape
+#     # Flatten spatial dims: (B, T*F, C)
+#     x_flat = Reshape((T * F, C))(x)
+#     # Speaker as query: (B, 1, D)
+#     q = Reshape((1, speaker_embedding.shape[-1]))(speaker_embedding)
+#     # Project to match channels
+#     q = Dense(C)(q)
+#     # Cross-attention
+#     attn = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(
+#         query=q, value=x_flat, key=x_flat
+#     )
+#     # Broadcast back to all positions
+#     attn = RepeatVector(T * F)(attn[:, 0, :])
+#     # Reshape back to feature map
+#     attn_map = Reshape((T, F, C))(attn)
+#     # Residual modulation
+#     return x + attn_map
+
+
+def speaker_cross_attention_block(
+    x,
+    ref_seq,
+    speaker_embed,
+    num_heads=4,
+    key_dim=64,
+    local_kernel_size=9,
+):
     """
-    B, T, F, C = x.shape
-    # Flatten spatial dims: (B, T*F, C)
-    x_flat = Reshape((T * F, C))(x)
-    # Speaker as query: (B, 1, D)
-    q = Reshape((1, speaker_embedding.shape[-1]))(speaker_embedding)
-    # Project to match channels
-    q = Dense(C)(q)
-    # Cross-attention
-    attn = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(
-        query=q, value=x_flat, key=x_flat
+    Speaker-conditioned alignment block with BOTH:
+      1) local temporal alignment (depthwise temporal convolution), and
+      2) global alignment (cross-attention over reference sequence).
+    """
+    C = x.shape[-1]
+
+    # ---- Temporal collapse ----
+    x_time = Lambda(lambda t: ops.mean(t, axis=2))(x)  # (B, T, C)
+
+    # ---- Align dimensions ----
+    ref_seq = Dense(C)(ref_seq)
+    spk = Dense(C)(speaker_embed)
+
+    # ---- Expand speaker ----
+    spk = Lambda(lambda t: ops.expand_dims(t, axis=1))(spk)
+
+    # ---- Gated fusion for query ----
+    gate = Dense(C, activation="sigmoid")(speaker_embed)
+    gate = Lambda(lambda t: ops.expand_dims(t, axis=1))(gate)
+    q = layers.Add()([x_time, layers.Multiply()([spk, gate])])
+
+    # ==========================================================
+    # Local alignment branch (temporal neighborhood)
+    # ==========================================================
+    local_out = Lambda(lambda t: ops.expand_dims(t, axis=2))(q)  # (B, T, 1, C)
+    local_out = DepthwiseConv2D(
+        (local_kernel_size, 1),
+        padding="same",
+        depthwise_initializer="he_normal",
+    )(local_out)
+    local_out = Conv2D(C, (1, 1), padding="same", kernel_initializer="he_normal")(local_out)
+    local_out = Lambda(lambda t: t[:, :, 0, :])(local_out)  # (B, T, C)
+
+    # ==========================================================
+    # Global alignment branch (cross-attention)
+    # ==========================================================
+    global_out = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(
+        query=q, key=ref_seq, value=ref_seq
     )
-    # Broadcast back to all positions
-    attn = RepeatVector(T * F)(attn[:, 0, :])
-    # Reshape back to feature map
-    attn_map = Reshape((T, F, C))(attn)
-    # Residual modulation
+
+    # ---- Fuse local + global ----
+    mix_gate = Dense(C, activation="sigmoid")(speaker_embed)
+    mix_gate = Lambda(lambda t: ops.expand_dims(t, axis=1))(mix_gate)
+    fused = layers.Add()([
+        layers.Multiply()([mix_gate, global_out]),
+        layers.Multiply()([1.0 - mix_gate, local_out]),
+    ])
+
+    # ---- Residual + norm ----
+    attn_out = layers.Add()([fused, x_time])
+    attn_out = LayerNormalization(epsilon=1e-6)(attn_out)
+
+    # ---- Broadcast back ----
+    F = x.shape[2]
+    attn_map = Lambda(lambda t: ops.expand_dims(t, axis=2))(attn_out)
+    attn_map = Lambda(lambda t: ops.repeat(t, F, axis=2))(attn_map)
+
     return x + attn_map
     
-def tf_alternating_block(x, filters, dropout, activation="relu", use_bn=True, name_prefix="tfb"):
+def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
     # ---- Frequency branch (1 x 3) ----
     f_branch = Conv2D(filters, (1, 3), padding="same",
                       kernel_initializer="he_normal",
@@ -894,10 +1086,15 @@ def tf_alternating_block(x, filters, dropout, activation="relu", use_bn=True, na
         x = BatchNormalization(name=f"{name_prefix}_jbn")(x)
     x = Activation(activation)(x)
 
-    if dropout > 0:
-        x = SpatialDropout2D(dropout, name=f"{name_prefix}_dropout")(x)
-
     return x
+
+def plot_spectrogram(spectrogram, ax):
+    log_spec = np.log(spectrogram.T + np.finfo(float).eps)
+    height = log_spec.shape[0]
+    width = log_spec.shape[1]
+    X = np.linspace(0, np.size(spectrogram), num=width, dtype=int)
+    Y = range(height)
+    ax.pcolormesh(X, Y, log_spec)
 
 
 def custom_unet(
@@ -921,7 +1118,7 @@ def custom_unet(
         upsample = upsample_simple
 
     main_input = Input(input_shape, name="noisy_main")  # (T, F, C)
-    ref_input = Input((None, None, 256, 2), name="noisy_ref")
+    ref_input = Input((4, 98, 256, 2), name="noisy_ref")
     main_input_copy = ops.copy(main_input)
 
     x = main_input / (ops.std(main_input) + 1e-5)
@@ -938,7 +1135,7 @@ def custom_unet(
         #     dropout_type=dropout_type,
         #     activation=activation,
         # )
-        x=tf_alternating_block(x, filters, dropout, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
         dropout += dropout_change_per_layer
@@ -967,7 +1164,7 @@ def custom_unet(
         )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
-        ref_enc = TimeDistributed(MaxPooling2D((2, 2)))(ref_enc)
+        ref_enc = TimeDistributed(MaxPooling2D((1, 2)))(ref_enc)
         filters_ref *= 2
 
     ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
@@ -977,30 +1174,35 @@ def custom_unet(
     # )
     ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
-    speaker_embed = Dropout(0.5, name="speaker_embedding_dropout")(speaker_embed) # High dropout for robustness
 
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
-    
 
-    # 1. Flatten the spatial (F_small) and channel (C_small) dimensions
-    # Current x: (None, 24, 16, 256) -> Reshape to: (None, 24, 4096)
+    # 1. Flatten spatial and channel dims: (None, 24, 16, 256) -> (None, 24, 4096)
     x_flat = Reshape((T_small, F_small * C_small), name="bottleneck_flatten")(x)
 
-    # 2. Project 4096 down to 256 (This is where you save millions of parameters!) 128 small, 256 medium, 512 large
-    # x_reduced = TimeDistributed(
-    #     Dense(4096, activation=activation), name="bottleneck_projection"
-    # )(x_flat)
-    bottleneck_skip = TimeDistributed(Dense(512))(x_flat)
-
-    # 3. Add Speaker Embedding
-    # x_reduced: (None, 24, 256), speaker_embed: (None, 256)
+    # 2. Fuse speaker conditioning and compress to narrow latent (256 dimensions).
+    # This keeps xLSTM stack efficient while still modeling speaker dependence.
+    # The 256-wide bottleneck is the sweet spot: small enough to save parameters,
+    # large enough for rich context via the post/pre up-projection mechanisms.
     spk_repeated = RepeatVector(T_small)(speaker_embed)
-    x_seq = Concatenate(axis=-1, name="bottleneck_concat")([x_flat, spk_repeated])
+    bottleneck_input = Concatenate(axis=-1, name="bottleneck_concat")([x_flat, spk_repeated])
+    bottleneck_dim = 256
+    
+    # Skip connection through the bottleneck dimension (for residual stability)
+    bottleneck_skip = TimeDistributed(Dense(bottleneck_dim), name="bottleneck_skip")(bottleneck_input)
 
-    # 4. Apply GRU on the compressed dimension (hidden_dim=256 is plenty, medium, small-256, large, 1024)
-    x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main")
+    # 3. Project concatenated input to bottleneck dimension
+    x_seq = TimeDistributed(
+        Dense(bottleneck_dim, activation=activation),
+        name="bottleneck_projection",
+    )(bottleneck_input)
+    
+    # 4. Apply xLSTM blocks: sLSTM (post up-projection) + mLSTM (pre up-projection)
+    #    This realizes Cover's Theorem by non-linearly summarizing in high-dimensional spaces.
+    x_seq = add_xlstm_block(x_seq, hidden_dim=bottleneck_dim, num_layers=2, prefix="main")
 
-    x_seq = layers.Add()([x_seq, bottleneck_skip])
+    # 5. Residual connection in bottleneck space
+    x_seq = layers.Add(name="main_bottleneck_residual")([x_seq, bottleneck_skip])
 
     # 5. Project back up to the original flattened size (4096)
     # x_expanded = TimeDistributed(
@@ -1012,9 +1214,8 @@ def custom_unet(
     x = Reshape((T_small, F_small, C_small))(x_expanded)
 
     # Now proceed to FiLM and upsampling
-    x = cross_attention_cond(x, speaker_embed)
-
-    skip_dropout = SpatialDropout2D(0.1)
+    # x = cross_attention_cond(x, speaker_embed)
+    x = speaker_cross_attention_block(x, ref_seq, speaker_embed)
 
     if not use_dropout_on_upsampling:
         dropout = 0.0
@@ -1022,17 +1223,16 @@ def custom_unet(
     for conv in reversed(down_layers):
         filters //= 2  # decreasing number of filters with each layer
         dropout -= dropout_change_per_layer
-        # 1. Get the corresponding skip connection from the encoder
-        conv_dropped = skip_dropout(conv)
         x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
         # Apply FiLM conditioning after upsampling but before concatenation
         x = film(x, speaker_embed)
         if use_attention:
-            x = attention_concat(conv_below=x, skip_connection=conv_dropped)
+            x = attention_concat(conv_below=x, skip_connection=conv)
         else:
-            x = concatenate([x, conv_dropped])
+            x = concatenate([x, conv])
 
-        x = cross_attention_cond(x, speaker_embed)
+        # x = cross_attention_cond(x, speaker_embed)
+        x = speaker_cross_attention_block(x, ref_seq, speaker_embed)
         x = conv2d_block(
             inputs=x,
             filters=filters,
@@ -1086,7 +1286,7 @@ model = custom_unet(
     num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
-    dropout=0.3,
+    dropout=0.2,
     output_activation="sigmoid",
 )
 callbacks = [
@@ -1285,7 +1485,7 @@ def sample_reference_segments_full(wav, K, segment_len):
     )
 
 
-def enhance_audio_consistent(noisy_wav, ref_wav, model, K=6, overlap=0.5):
+def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
     """
     Inference aligned with training distribution.
     - Waveform chunking
@@ -1330,7 +1530,7 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=6, overlap=0.5):
             fft_length=n_fft,
         ),
         ref_segments,
-        fn_output_signature=tf.TensorSpec(shape=[298, 256], dtype=tf.complex64),
+        fn_output_signature=tf.TensorSpec(shape=[98, 256], dtype=tf.complex64),
     )
 
     ref_specs = complex_to_2ch(ref_specs_complex)[None, ...]
