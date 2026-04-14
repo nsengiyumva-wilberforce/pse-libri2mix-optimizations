@@ -852,7 +852,7 @@ def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
     # Residual modulation
     return x + attn_map
     
-def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
+def tf_alternating_block(x, filters, dropout, activation="relu", use_bn=True, name_prefix="tfb"):
     # ---- Frequency branch (1 x 3) ----
     f_branch = Conv2D(filters, (1, 3), padding="same",
                       kernel_initializer="he_normal",
@@ -894,15 +894,10 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
         x = BatchNormalization(name=f"{name_prefix}_jbn")(x)
     x = Activation(activation)(x)
 
-    return x
+    if dropout > 0:
+        x = SpatialDropout2D(dropout, name=f"{name_prefix}_dropout")(x)
 
-def plot_spectrogram(spectrogram, ax):
-    log_spec = np.log(spectrogram.T + np.finfo(float).eps)
-    height = log_spec.shape[0]
-    width = log_spec.shape[1]
-    X = np.linspace(0, np.size(spectrogram), num=width, dtype=int)
-    Y = range(height)
-    ax.pcolormesh(X, Y, log_spec)
+    return x
 
 
 def custom_unet(
@@ -943,7 +938,7 @@ def custom_unet(
         #     dropout_type=dropout_type,
         #     activation=activation,
         # )
-        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        x=tf_alternating_block(x, filters, dropout, activation, use_bn=True, name_prefix=f"tfb_{l}")
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
         dropout += dropout_change_per_layer
@@ -972,7 +967,7 @@ def custom_unet(
         )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
-        ref_enc = TimeDistributed(MaxPooling2D((1, 2)))(ref_enc)
+        ref_enc = TimeDistributed(MaxPooling2D((2, 2)))(ref_enc)
         filters_ref *= 2
 
     ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
@@ -982,8 +977,10 @@ def custom_unet(
     # )
     ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
+    speaker_embed = Dropout(0.5, name="speaker_embedding_dropout")(speaker_embed) # High dropout for robustness
 
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
+    
 
     # 1. Flatten the spatial (F_small) and channel (C_small) dimensions
     # Current x: (None, 24, 16, 256) -> Reshape to: (None, 24, 4096)
@@ -1017,19 +1014,23 @@ def custom_unet(
     # Now proceed to FiLM and upsampling
     x = cross_attention_cond(x, speaker_embed)
 
+    skip_dropout = SpatialDropout2D(0.1)
+
     if not use_dropout_on_upsampling:
         dropout = 0.0
         dropout_change_per_layer = 0.0
     for conv in reversed(down_layers):
         filters //= 2  # decreasing number of filters with each layer
         dropout -= dropout_change_per_layer
+        # 1. Get the corresponding skip connection from the encoder
+        conv_dropped = skip_dropout(conv)
         x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
         # Apply FiLM conditioning after upsampling but before concatenation
         x = film(x, speaker_embed)
         if use_attention:
-            x = attention_concat(conv_below=x, skip_connection=conv)
+            x = attention_concat(conv_below=x, skip_connection=conv_dropped)
         else:
-            x = concatenate([x, conv])
+            x = concatenate([x, conv_dropped])
 
         x = cross_attention_cond(x, speaker_embed)
         x = conv2d_block(
@@ -1083,9 +1084,9 @@ model = custom_unet(
     filters=32,
     use_dropout_on_upsampling=False,
     num_layers=4,
-    use_attention=True,
+    use_attention=False,
     upsample_mode="deconv",
-    dropout=0.2,
+    dropout=0.3,
     output_activation="sigmoid",
 )
 callbacks = [
