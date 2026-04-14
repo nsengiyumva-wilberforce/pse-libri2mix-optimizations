@@ -1418,14 +1418,14 @@ model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-history = model.fit(
-    train_dataset,
-    epochs=EPOCHS,
-    # steps_per_epoch=steps_per_epoch,
-    validation_data=val_dataset,
-    # validation_steps=validation_steps,
-    callbacks=callbacks + [LrLogger()],
-)
+# history = model.fit(
+#     train_dataset,
+#     epochs=EPOCHS,
+#     # steps_per_epoch=steps_per_epoch,
+#     validation_data=val_dataset,
+#     # validation_steps=validation_steps,
+#     callbacks=callbacks + [LrLogger()],
+# )
 
 
 # Evaluate the model on test set
@@ -1435,18 +1435,30 @@ history = model.fit(
 # model.trainable = False
 # print("Model loaded for inference")
 
-# load the keras model for inference
-model = tf.keras.models.load_model(
-    "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras",
-    custom_objects={
-        "sLSTMCell": sLSTMCell,
-        "mLSTMCell": mLSTMCell,
-        "WarmupCosineDecay": WarmupCosineDecay,
-        "complex_enhancement_loss_pc": complex_enhancement_loss_pc,
-    }
-)
+# load weights for inference without deserializing Lambda layers from a full model
+primary_weights_path = model_filename  # .keras checkpoint created by ModelCheckpoint
+fallback_weights_path = "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.weights.h5"
+
+loaded_weights_path = None
+last_load_error = None
+
+for candidate_path in (primary_weights_path, fallback_weights_path):
+    try:
+        model.load_weights(candidate_path)
+        loaded_weights_path = candidate_path
+        break
+    except Exception as e:
+        last_load_error = e
+        print(f"Warning: could not load weights from {candidate_path}: {e}")
+
+if loaded_weights_path is None:
+    raise RuntimeError(
+        "Failed to load model weights from both checkpoint files. "
+        f"Last error: {last_load_error}"
+    )
+
 model.trainable = False
-print("Model loaded for inference")
+print(f"Model weights loaded for inference from: {loaded_weights_path}")
 
 
 SR = 8000
