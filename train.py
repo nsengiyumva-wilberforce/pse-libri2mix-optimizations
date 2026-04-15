@@ -151,12 +151,12 @@ def load_from_folder(data_root, split):
 
 
 sr = 8000
-n_fft = 510  # 128 freq bins
+n_fft = 510  # n_fft//2 + 1 = 256 frequency bins
 frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 4
+batch_size = 12
 EPOCHS = 300
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
@@ -326,15 +326,43 @@ def sample_reference_segments(wav, K, segment_len):
     return tf.cond(wav_len < segment_len, pad, sample)
 
 
+@tf.function
+def sample_reference_segments_deterministic(wav, K, segment_len):
+    wav_len = tf.shape(wav)[0]
+
+    # If too short: pad and repeat
+    def pad():
+        pad_len = segment_len - wav_len
+        wav_pad = tf.pad(wav, [[0, pad_len]])
+        return tf.tile(tf.expand_dims(wav_pad, 0), [K, 1])
+
+    # If long enough: evenly spaced reference segments (stable val/test)
+    def sample_uniform():
+        max_start = tf.cast(wav_len - segment_len, tf.float32)
+        starts = tf.linspace(0.0, max_start, K)
+        starts = tf.cast(starts, tf.int32)
+        return tf.map_fn(
+            lambda s: wav[s : s + segment_len],
+            starts,
+            fn_output_signature=tf.float32,
+        )
+
+    return tf.cond(wav_len < segment_len, pad, sample_uniform)
+
+
 def load_libri_speech_triplet_multiview(
-    mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2
+    mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2, deterministic_refs=False
 ):
     clean = preprocess_tf(tgt_path)
     noisy = preprocess_tf(mix_path)
     ref = preprocess_tf(ref_path)
     mix_chunks = split_into_chunks(noisy, CHUNK_SIZE, STRIDE)
     clean_chunks = split_into_chunks(clean, CHUNK_SIZE, STRIDE)
-    ref_segments = sample_reference_segments(ref, K, ref_len)
+    ref_segments = tf.cond(
+        tf.convert_to_tensor(deterministic_refs),
+        lambda: sample_reference_segments_deterministic(ref, K, ref_len),
+        lambda: sample_reference_segments(ref, K, ref_len),
+    )
     return mix_chunks, ref_segments, clean_chunks
 
 
@@ -347,7 +375,9 @@ def configure_libri_speech_dataset(
 
     # 1. Load + chunk
     ds = ds.map(
-        lambda n, r, t: load_libri_speech_triplet_multiview(n, r, t, K),
+        lambda n, r, t: load_libri_speech_triplet_multiview(
+            n, r, t, K, deterministic_refs=not is_train
+        ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
 
@@ -856,7 +886,7 @@ def upsample_conv(filters, kernel_size, strides, padding):
 
 
 def upsample_simple(filters, kernel_size, strides, padding):
-    return UpSampling2D(strides)
+    return UpSampling2D(strides, interpolation="bilinear")
 
 
 def attention_concat(conv_below, skip_connection):
@@ -980,8 +1010,8 @@ def speaker_cross_attention_block(
     x,
     ref_seq,
     speaker_embed,
-    num_heads=4,
-    key_dim=64,
+    num_heads=2,
+    key_dim=32,
     local_kernel_size=9,
 ):
     """
@@ -1042,7 +1072,13 @@ def speaker_cross_attention_block(
     attn_map = Lambda(lambda t: ops.expand_dims(t, axis=2))(attn_out)
     attn_map = Lambda(lambda t: ops.repeat(t, F, axis=2))(attn_map)
 
-    return x + attn_map
+    # Controlled modulation strength to avoid over-conditioning collapse.
+    mod_gain = Dense(1, activation="sigmoid")(speaker_embed)
+    mod_gain = Lambda(lambda t: 0.5 * t)(mod_gain)
+    mod_gain = Lambda(lambda t: tf.reshape(t, [tf.shape(t)[0], 1, 1, 1]))(mod_gain)
+    attn_map = layers.Multiply()([attn_map, mod_gain])
+
+    return layers.Add()([x, attn_map])
     
 def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
     # ---- Frequency branch (1 x 3) ----
@@ -1121,8 +1157,19 @@ def custom_unet(
     ref_input = Input((4, 98, 256, 2), name="noisy_ref")
     main_input_copy = ops.copy(main_input)
 
-    x = main_input / (ops.std(main_input) + 1e-5)
-    ref_x = ref_input / (ops.std(ref_input) + 1e-5)
+    # Per-sample RMS normalization (signal-consistent, avoids cross-sample leakage).
+    x = Lambda(
+        lambda t: t
+        / tf.sqrt(tf.reduce_mean(tf.square(t), axis=[1, 2, 3], keepdims=True) + 1e-6),
+        name="main_rms_norm",
+    )(main_input)
+    ref_x = Lambda(
+        lambda t: t
+        / tf.sqrt(tf.reduce_mean(tf.square(t), axis=[1, 2, 3, 4], keepdims=True) + 1e-6),
+        name="ref_rms_norm",
+    )(ref_input)
+    # speaker branch hardening (only active during training)
+    ref_x = layers.GaussianNoise(0.01, name="ref_in_noise")(ref_x)
     # plot the first element of the batch for both main and reference inputs
 
     down_layers = []
@@ -1141,52 +1188,96 @@ def custom_unet(
         dropout += dropout_change_per_layer
         filters = filters * 2
 
+    # ---------------- Speaker encoder (slim + robust) ----------------
+    # Use separable conv blocks + compact recurrent modeling to reduce params
+    # and improve generalization without exploding memory.
     ref_enc = ref_x
-    filters_ref = filters // (2**num_layers)
-    for l in range(num_layers):
-        # first look at the frequency bins by applying a 1x3 convolution
-        ref_enc_f = TimeDistributed(
-            Conv2D(filters_ref, (1, 3), activation=activation, padding="same")
-        )(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc_f)
-        # then look at the time dimension by applying a 3x1 convolution
-        ref_enc__t = TimeDistributed(
-            Conv2D(filters_ref, (3, 1), activation=activation, padding="same")
-        )(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc__t)
-        # concatenate them
-        ref_enc = Concatenate()([ref_enc_f, ref_enc__t])
-        # then look at both time and frequency with a 3x3 convolution
+    ref_layers = max(2, num_layers - 1)
+    ref_filters = 16
+    ref_max_filters = 96
+
+    for l in range(ref_layers):
         ref_enc = TimeDistributed(
-            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
+            Conv2D(
+                ref_filters,
+                (1, 1),
+                padding="same",
+                use_bias=False,
+                kernel_initializer="he_normal",
+            ),
+            name=f"ref_pw_in_{l}",
+        )(ref_enc)
+        ref_enc = TimeDistributed(
+            DepthwiseConv2D(
+                (3, 3),
+                padding="same",
+                depthwise_initializer="he_normal",
+                use_bias=False,
+            ),
+            name=f"ref_dw_{l}",
+        )(ref_enc)
+        ref_enc = TimeDistributed(
+            Conv2D(
+                ref_filters,
+                (1, 1),
+                padding="same",
+                use_bias=False,
+                kernel_initializer="he_normal",
+            ),
+            name=f"ref_pw_out_{l}",
         )(ref_enc)
         if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
-        ref_enc = TimeDistributed(MaxPooling2D((1, 2)))(ref_enc)
-        filters_ref *= 2
+            ref_enc = TimeDistributed(BatchNormalization(), name=f"ref_bn_{l}")(ref_enc)
+        ref_enc = Activation(activation, name=f"ref_act_{l}")(ref_enc)
+        ref_enc = TimeDistributed(SpatialDropout2D(0.15), name=f"ref_sdo_{l}")(ref_enc)
+        ref_enc = TimeDistributed(MaxPooling2D((1, 2)), name=f"ref_pool_{l}")(ref_enc)
+        ref_filters = min(ref_filters * 2, ref_max_filters)
 
-    ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
-    # Apply GRU Block
-    # ref_seq = add_gru_block(
-    #     ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
-    # )
-    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
-    speaker_embed = GlobalAveragePooling1D()(ref_seq)
+    ref_seq = TimeDistributed(GlobalAveragePooling2D(), name="ref_gap")(ref_enc)
+    ref_seq = LayerNormalization(epsilon=1e-6, name="ref_pre_ln")(ref_seq)
+    ref_seq = TimeDistributed(
+        Dense(128, activation="swish", use_bias=False),
+        name="ref_token_proj",
+    )(ref_seq)
+    ref_seq = Bidirectional(
+        GRU(96, return_sequences=True, dropout=0.2, recurrent_dropout=0.0),
+        merge_mode="concat",
+        name="ref_bigru",
+    )(ref_seq)
+    ref_seq = LayerNormalization(epsilon=1e-6, name="ref_post_ln")(ref_seq)
+    ref_seq = TimeDistributed(Dense(128, activation="swish"), name="ref_post_proj")(ref_seq)
 
-    T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
+    speaker_embed = GlobalAveragePooling1D(name="speaker_gap")(ref_seq)
+    speaker_embed = Dense(128, activation="tanh", name="speaker_embed_bottleneck")(speaker_embed)
+    speaker_embed = Lambda(
+        lambda t: tf.math.l2_normalize(t, axis=-1),
+        name="speaker_embed_l2norm",
+    )(speaker_embed)
 
-    # 1. Flatten spatial and channel dims: (None, 24, 16, 256) -> (None, 24, 4096)
-    x_flat = Reshape((T_small, F_small * C_small), name="bottleneck_flatten")(x)
+    T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]
 
-    # 2. Fuse speaker conditioning and compress to narrow latent (256 dimensions).
-    # This keeps xLSTM stack efficient while still modeling speaker dependence.
-    # The 256-wide bottleneck is the sweet spot: small enough to save parameters,
-    # large enough for rich context via the post/pre up-projection mechanisms.
+    # -------- Efficient bottleneck --------
+    # Reduce channel width before flattening to avoid parameter explosion.
+    reduced_c = max(32, C_small // 2)
+    x_reduced = Conv2D(
+        reduced_c,
+        (1, 1),
+        padding="same",
+        use_bias=False,
+        kernel_initializer="he_normal",
+        name="main_bottleneck_ch_reduce",
+    )(x)
+    if use_batch_norm:
+        x_reduced = BatchNormalization(name="main_bottleneck_ch_reduce_bn")(x_reduced)
+    x_reduced = Activation(activation, name="main_bottleneck_ch_reduce_act")(x_reduced)
+
+    # 1. Flatten spatial and reduced channel dims
+    x_flat = Reshape((T_small, F_small * reduced_c), name="bottleneck_flatten")(x_reduced)
+
+    # 2. Fuse speaker conditioning and compress to narrow latent.
     spk_repeated = RepeatVector(T_small)(speaker_embed)
     bottleneck_input = Concatenate(axis=-1, name="bottleneck_concat")([x_flat, spk_repeated])
-    bottleneck_dim = 256
+    bottleneck_dim = 192
     
     # Skip connection through the bottleneck dimension (for residual stability)
     bottleneck_skip = TimeDistributed(Dense(bottleneck_dim), name="bottleneck_skip")(bottleneck_input)
@@ -1199,19 +1290,33 @@ def custom_unet(
     
     # 4. Apply xLSTM blocks: sLSTM (post up-projection) + mLSTM (pre up-projection)
     #    This realizes Cover's Theorem by non-linearly summarizing in high-dimensional spaces.
-    x_seq = add_xlstm_block(x_seq, hidden_dim=bottleneck_dim, num_layers=2, prefix="main")
+    x_seq = add_xlstm_block(
+        x_seq,
+        hidden_dim=bottleneck_dim,
+        num_layers=2,
+        prefix="main",
+        slstm_expansion_ratio=1.5,
+        mlstm_expansion_ratio=1.25,
+        mlstm_max_internal_dim=256,
+    )
 
     # 5. Residual connection in bottleneck space
     x_seq = layers.Add(name="main_bottleneck_residual")([x_seq, bottleneck_skip])
 
-    # 5. Project back up to the original flattened size (4096)
-    # x_expanded = TimeDistributed(
-    #     Dense(F_small * C_small, activation=activation), name="bottleneck_expansion"
-    # )(x_seq)
-
-    # 6. Reshape back to the 4D tensor (None, 24, 16, 256) for the Decoder
-    x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
-    x = Reshape((T_small, F_small, C_small))(x_expanded)
+    # 6. Project back to reduced map and restore channels for the decoder
+    x_expanded = TimeDistributed(Dense(F_small * reduced_c), name="bottleneck_expansion")(x_seq)
+    x = Reshape((T_small, F_small, reduced_c), name="bottleneck_reshape")(x_expanded)
+    x = Conv2D(
+        C_small,
+        (1, 1),
+        padding="same",
+        use_bias=False,
+        kernel_initializer="he_normal",
+        name="main_bottleneck_ch_restore",
+    )(x)
+    if use_batch_norm:
+        x = BatchNormalization(name="main_bottleneck_ch_restore_bn")(x)
+    x = Activation(activation, name="main_bottleneck_ch_restore_act")(x)
 
     # Now proceed to FiLM and upsampling
     # x = cross_attention_cond(x, speaker_embed)
@@ -1220,7 +1325,7 @@ def custom_unet(
     if not use_dropout_on_upsampling:
         dropout = 0.0
         dropout_change_per_layer = 0.0
-    for conv in reversed(down_layers):
+    for dec_idx, conv in enumerate(reversed(down_layers)):
         filters //= 2  # decreasing number of filters with each layer
         dropout -= dropout_change_per_layer
         x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
@@ -1231,8 +1336,10 @@ def custom_unet(
         else:
             x = concatenate([x, conv])
 
-        # x = cross_attention_cond(x, speaker_embed)
-        x = speaker_cross_attention_block(x, ref_seq, speaker_embed)
+        # Keep explicit speaker cross-attention on low-resolution decoder stages only.
+        # Higher-resolution stages are FiLM-modulated to keep params/latency lower.
+        if dec_idx < 2:
+            x = speaker_cross_attention_block(x, ref_seq, speaker_embed)
         x = conv2d_block(
             inputs=x,
             filters=filters,
@@ -1281,25 +1388,27 @@ model = custom_unet(
     input_shape=(192, 256, 2),
     use_batch_norm=True,
     num_classes=2,
-    filters=32,
+    filters=24,
     use_dropout_on_upsampling=False,
-    num_layers=4,
+    num_layers=3,
     use_attention=False,
-    upsample_mode="deconv",
+    upsample_mode="upsample",
     dropout=0.2,
     output_activation="sigmoid",
 )
 callbacks = [
     ModelCheckpoint(
         model_filename,
-        monitor="val_loss",
+        monitor="val_waveform_si_snr_metric",
+        mode="max",
         save_best_only=True,
         save_weights_only=False,
         verbose=1,
     ),
     EarlyStopping(
-        monitor="val_loss",
-        patience=100,
+        monitor="val_waveform_si_snr_metric",
+        mode="max",
+        patience=30,
         min_delta=0.00001,
         restore_best_weights=True,
         verbose=1,
@@ -1308,52 +1417,143 @@ callbacks = [
 
 
 def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
-    # Split Real and Imaginary
-    # Shape expected: (Batch, Time, Freq, 2)
+    """
+    Composite loss aligned with enhancement objectives:
+      - spectral magnitude fidelity (PESQ/STOI proxy)
+      - complex-domain fidelity (phase-aware)
+      - phase direction consistency
+      - temporal smoothness
+      - waveform SI-SNR (direct SI-SDR alignment)
+      - multi-resolution STFT waveform consistency
+    """
+    # Split Real/Imaginary, shape: (B, T, F, 2)
     r_t, i_t = y_true[..., 0], y_true[..., 1]
     r_p, i_p = y_pred[..., 0], y_pred[..., 1]
 
-    # 1. Compressed Magnitude Loss
+    c_true = tf.complex(r_t, i_t)
+    c_pred = tf.complex(r_p, i_p)
+
+    # ---------------- Spectral-domain terms ----------------
     mag_t = tf.sqrt(r_t**2 + i_t**2 + eps)
     mag_p = tf.sqrt(r_p**2 + i_p**2 + eps)
-    mag_loss = tf.reduce_mean(tf.abs(mag_t**gamma - mag_p**gamma))
 
-    # 2. Compressed Complex Loss (Handles Phase implicitly and stably)
-    # This transforms the complex values into the compressed domain
-    # Formula: (r + ji) / |mag| * |mag|^gamma = (r + ji) * |mag|^(gamma-1)
-    factor_t = mag_t**(gamma - 1)
-    factor_p = mag_p**(gamma - 1)
-    
+    # 1) Compressed log-magnitude loss (strong perceptual correlation)
+    log_mag_t = tf.math.log1p(tf.pow(mag_t, gamma))
+    log_mag_p = tf.math.log1p(tf.pow(mag_p, gamma))
+    mag_loss = tf.reduce_mean(tf.abs(log_mag_t - log_mag_p))
+
+    # 2) Compressed complex Charbonnier loss (stable phase-aware regression)
+    factor_t = tf.pow(mag_t + eps, gamma - 1.0)
+    factor_p = tf.pow(mag_p + eps, gamma - 1.0)
     c_real_t, c_imag_t = r_t * factor_t, i_t * factor_t
     c_real_p, c_imag_p = r_p * factor_p, i_p * factor_p
-    
-    complex_loss = tf.reduce_mean(tf.abs(c_real_t - c_real_p) + tf.abs(c_imag_t - c_imag_p))
+    complex_diff = tf.square(c_real_t - c_real_p) + tf.square(c_imag_t - c_imag_p)
+    complex_loss = tf.reduce_mean(tf.sqrt(complex_diff + 1e-6))
 
-    # 3. Temporal Consistency (Delta Loss)
-    # Using the compressed magnitude for delta often yields better PESQ
-    delta_mag_t = mag_t[:, 1:, :] - mag_t[:, :-1, :]
-    delta_mag_p = mag_p[:, 1:, :] - mag_p[:, :-1, :]
+    # 3) Unit-phase cosine loss (encourages phase-direction alignment)
+    u_real_t = r_t / (mag_t + eps)
+    u_imag_t = i_t / (mag_t + eps)
+    u_real_p = r_p / (mag_p + eps)
+    u_imag_p = i_p / (mag_p + eps)
+    cos_phase = u_real_t * u_real_p + u_imag_t * u_imag_p
+    phase_loss = tf.reduce_mean(1.0 - cos_phase)
+
+    # 4) Temporal consistency on compressed magnitude
+    delta_mag_t = log_mag_t[:, 1:, :] - log_mag_t[:, :-1, :]
+    delta_mag_p = log_mag_p[:, 1:, :] - log_mag_p[:, :-1, :]
     consistency_loss = tf.reduce_mean(tf.square(delta_mag_t - delta_mag_p))
 
-    # 4. Scale-Invariant Signal-to-Noise Ratio (SI-SNR) 
-    # Much more stable than a custom SI-L1 loss
-    t_flat = tf.reshape(y_true, [tf.shape(y_true)[0], -1])
-    p_flat = tf.reshape(y_pred, [tf.shape(y_pred)[0], -1])
-    
-    dot = tf.reduce_sum(t_flat * p_flat, axis=1, keepdims=True)
-    snr_norm = tf.reduce_sum(t_flat**2, axis=1, keepdims=True) + eps
-    target_proj = (dot / snr_norm) * t_flat
-    
-    noise_res = p_flat - target_proj
-    si_snr = 10 * tf.math.log(tf.reduce_sum(target_proj**2, axis=1) / 
-                             (tf.reduce_sum(noise_res**2, axis=1) + eps) + eps) / tf.math.log(10.0)
-    
-    si_loss = -tf.reduce_mean(si_snr) # Negative because we want to maximize SNR
+    # ---------------- Waveform-domain terms ----------------
+    inv_window = tf.signal.inverse_stft_window_fn(frame_step)
+    wav_t = tf.signal.inverse_stft(
+        c_true,
+        frame_length=frame_length,
+        frame_step=frame_step,
+        fft_length=n_fft,
+        window_fn=inv_window,
+    )
+    wav_p = tf.signal.inverse_stft(
+        c_pred,
+        frame_length=frame_length,
+        frame_step=frame_step,
+        fft_length=n_fft,
+        window_fn=inv_window,
+    )
 
-    return (1.0 * mag_loss + 
-            1.0 * complex_loss + 
-            0.5 * consistency_loss + 
-            2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
+    # SI-SNR term
+    wav_t_zm = wav_t - tf.reduce_mean(wav_t, axis=1, keepdims=True)
+    wav_p_zm = wav_p - tf.reduce_mean(wav_p, axis=1, keepdims=True)
+    dot = tf.reduce_sum(wav_t_zm * wav_p_zm, axis=1, keepdims=True)
+    s_target = (dot / (tf.reduce_sum(wav_t_zm**2, axis=1, keepdims=True) + eps)) * wav_t_zm
+    e_noise = wav_p_zm - s_target
+    si_snr = 10.0 * tf.math.log(
+        (tf.reduce_sum(s_target**2, axis=1) + eps)
+        / (tf.reduce_sum(e_noise**2, axis=1) + eps)
+    ) / tf.math.log(10.0)
+    si_loss = -tf.reduce_mean(si_snr)
+
+    # Multi-resolution STFT waveform loss (helps PESQ/STOI)
+    mr_losses = []
+    for fl, fs in ((256, 64), (400, 160), (512, 128)):
+        st = tf.signal.stft(wav_t, frame_length=fl, frame_step=fs, fft_length=fl)
+        sp = tf.signal.stft(wav_p, frame_length=fl, frame_step=fs, fft_length=fl)
+        mt = tf.abs(st)
+        mp = tf.abs(sp)
+
+        # Spectral convergence + log magnitude
+        sc = tf.norm(mt - mp, ord="fro", axis=[-2, -1]) / (tf.norm(mt, ord="fro", axis=[-2, -1]) + eps)
+        lm = tf.reduce_mean(tf.abs(tf.math.log(mt + eps) - tf.math.log(mp + eps)), axis=[-2, -1])
+        mr_losses.append(tf.reduce_mean(sc + lm))
+
+    mrstft_loss = tf.add_n(mr_losses) / tf.cast(len(mr_losses), tf.float32)
+
+    # Final weighted objective
+    return (
+        0.9 * mag_loss
+        + 0.8 * complex_loss
+        + 0.3 * phase_loss
+        + 0.2 * consistency_loss
+        + 1.4 * mrstft_loss
+        + 1.6 * si_loss
+    )
+
+
+def waveform_si_snr_metric(y_true, y_pred, eps=1e-8):
+    r_t, i_t = y_true[..., 0], y_true[..., 1]
+    r_p, i_p = y_pred[..., 0], y_pred[..., 1]
+
+    c_true = tf.complex(r_t, i_t)
+    c_pred = tf.complex(r_p, i_p)
+
+    inv_window = tf.signal.inverse_stft_window_fn(frame_step)
+    wav_t = tf.signal.inverse_stft(
+        c_true,
+        frame_length=frame_length,
+        frame_step=frame_step,
+        fft_length=n_fft,
+        window_fn=inv_window,
+    )
+    wav_p = tf.signal.inverse_stft(
+        c_pred,
+        frame_length=frame_length,
+        frame_step=frame_step,
+        fft_length=n_fft,
+        window_fn=inv_window,
+    )
+
+    wav_t = wav_t - tf.reduce_mean(wav_t, axis=1, keepdims=True)
+    wav_p = wav_p - tf.reduce_mean(wav_p, axis=1, keepdims=True)
+
+    dot = tf.reduce_sum(wav_t * wav_p, axis=1, keepdims=True)
+    s_target = (dot / (tf.reduce_sum(wav_t**2, axis=1, keepdims=True) + eps)) * wav_t
+    e_noise = wav_p - s_target
+
+    si_snr = 10.0 * tf.math.log(
+        (tf.reduce_sum(s_target**2, axis=1) + eps)
+        / (tf.reduce_sum(e_noise**2, axis=1) + eps)
+    ) / tf.math.log(10.0)
+
+    return tf.reduce_mean(si_snr)
 
 
 total_steps = steps_per_epoch * EPOCHS
@@ -1416,16 +1616,20 @@ optimizer = tf.keras.optimizers.Adam(
 
 model.summary()
 
-model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
+model.compile(
+    optimizer=optimizer,
+    loss=complex_enhancement_loss_pc,
+    metrics=[waveform_si_snr_metric],
+)
 
-# history = model.fit(
-#     train_dataset,
-#     epochs=EPOCHS,
-#     # steps_per_epoch=steps_per_epoch,
-#     validation_data=val_dataset,
-#     # validation_steps=validation_steps,
-#     callbacks=callbacks + [LrLogger()],
-# )
+history = model.fit(
+    train_dataset,
+    epochs=EPOCHS,
+    # steps_per_epoch=steps_per_epoch,
+    validation_data=val_dataset,
+    # validation_steps=validation_steps,
+    callbacks=callbacks + [LrLogger()],
+)
 
 
 # Evaluate the model on test set
@@ -1572,11 +1776,13 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
 
         enhanced_complex = tf.complex(enhanced_2ch[..., 0], enhanced_2ch[..., 1])
 
+        inv_window = tf.signal.inverse_stft_window_fn(frame_step)
         enhanced_chunk = tf.signal.inverse_stft(
             enhanced_complex,
             frame_length=frame_length,
             frame_step=frame_step,
             fft_length=n_fft,
+            window_fn=inv_window,
         ).numpy()
 
         # ---- overlap-add ----
