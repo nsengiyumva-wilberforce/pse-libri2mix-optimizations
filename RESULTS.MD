@@ -99,6 +99,18 @@ STOI (mix):   0.714
 STOI (enh):   0.801
 STOIi:        0.087
 
+# testing on librispeech axiliary on libri2mix dataset
+========== FINAL RESULTS ==========
+SI-SDR (mix): -0.03
+SI-SDR (enh): 6.91
+SI-SDRi:      6.94
+PESQ (mix):   1.603
+PESQ (enh):   2.141
+PESQi:        0.538
+STOI (mix):   0.714
+STOI (enh):   0.807
+STOIi:        0.093
+
 # on 25 epochs, it starts overfitting:
 SI-SDR (mix): -0.03 
 SI-SDR (enh): 6.99 
