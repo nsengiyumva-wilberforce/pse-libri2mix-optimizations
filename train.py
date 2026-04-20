@@ -957,13 +957,6 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
 
     return x
 
-def plot_spectrogram(spectrogram, ax):
-    log_spec = np.log(spectrogram.T + np.finfo(float).eps)
-    height = log_spec.shape[0]
-    width = log_spec.shape[1]
-    X = np.linspace(0, np.size(spectrogram), num=width, dtype=int)
-    Y = range(height)
-    ax.pcolormesh(X, Y, log_spec)
 
 
 def custom_unet(
@@ -1013,59 +1006,27 @@ def custom_unet(
     ref_enc = ref_x
     filters_ref = filters // (2**num_layers)
     for l in range(num_layers):
-
-        # Preserve input for parallel branches
-        x_in = ref_enc
-
-        # ----- Frequency branch (1 × 3) -----
+        # first look at the frequency bins by applying a 1x3 convolution
         ref_enc_f = TimeDistributed(
-            Conv2D(filters_ref, (1, 3), padding="same",
-                kernel_initializer="he_normal")
-        )(x_in)
+            Conv2D(filters_ref, (1, 3), activation=activation, padding="same")
+        )(ref_enc)
         if use_batch_norm:
-            ref_enc_f = TimeDistributed(BatchNormalization())(ref_enc_f)
-        ref_enc_f = Activation(activation)(ref_enc_f)
-
-        # ----- Time branch (3 × 1) -----
-        ref_enc_t = TimeDistributed(
-            Conv2D(filters_ref, (3, 1), padding="same",
-                kernel_initializer="he_normal")
-        )(x_in)
+            ref_enc = TimeDistributed(BatchNormalization())(ref_enc_f)
+        # then look at the time dimension by applying a 3x1 convolution
+        ref_enc__t = TimeDistributed(
+            Conv2D(filters_ref, (3, 1), activation=activation, padding="same")
+        )(ref_enc)
         if use_batch_norm:
-            ref_enc_t = TimeDistributed(BatchNormalization())(ref_enc_t)
-        ref_enc_t = Activation(activation)(ref_enc_t)
-
-        # ----- Merge (concatenate along channels) -----
-        ref_enc = Concatenate(axis=-1)([
-            ref_enc_f * 0.5,
-            ref_enc_t * 0.5
-        ])
-
-        # ----- Joint TF modeling (compress channels back) -----
+            ref_enc = TimeDistributed(BatchNormalization())(ref_enc__t)
+        # concatenate them
+        ref_enc = Concatenate()([ref_enc_f, ref_enc__t])
+        # then look at both time and frequency with a 3x3 convolution
         ref_enc = TimeDistributed(
-            Conv2D(filters_ref, (3, 3), padding="same",
-                kernel_initializer="he_normal")
+            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
         )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
-        ref_enc = Activation(activation)(ref_enc)
-
-        # ----- Optional deeper refinement (VGG-style) -----
-        ref_enc = TimeDistributed(
-            Conv2D(filters_ref, (3, 3), padding="same",
-                kernel_initializer="he_normal")
-        )(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
-        ref_enc = Activation(activation)(ref_enc)
-
-        # ----- Regularization (important for your overfitting) -----
-        ref_enc = TimeDistributed(SpatialDropout2D(0.2))(ref_enc)
-
-        # ----- Downsample (frequency only) -----
         ref_enc = TimeDistributed(MaxPooling2D((1, 2)))(ref_enc)
-
-        # ----- Increase capacity -----
         filters_ref *= 2
 
     ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
@@ -1119,20 +1080,18 @@ def custom_unet(
         # Apply FiLM conditioning after upsampling but before concatenation
         x = film(x, speaker_embed)
 
-        if use_attention:
-            x = attention_concat(conv_below=x, skip_connection=conv)
-        else:
-            x = concatenate([x, conv])
+        x = concatenate([x, conv])
 
         x = cross_attention_cond(x, speaker_embed)
-        x = conv2d_block(
-            inputs=x,
-            filters=filters,
-            use_batch_norm=use_batch_norm,
-            dropout=dropout,
-            dropout_type=dropout_type,
-            activation=activation,
-        )
+        # x = conv2d_block(
+        #     inputs=x,
+        #     filters=filters,
+        #     use_batch_norm=use_batch_norm,
+        #     dropout=dropout,
+        #     dropout_type=dropout_type,
+        #     activation=activation,
+        # )
+        x=tf_alternating_block(x, filters, activation, use_bn=False, name_prefix=f"up_{filters}")
     # --- Split noisy input into real / imag ---
     input_r = main_input_copy[..., 0:1]
     input_i = main_input_copy[..., 1:2]
@@ -1178,7 +1137,7 @@ model = custom_unet(
     num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
-    dropout=0.5,
+    dropout=0.3,
     output_activation="sigmoid",
 )
 callbacks = [
@@ -1248,14 +1207,10 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
             2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
 
 
-warmup_epochs = 15
-decay_epochs = 100
-initial_lr = 1e-4
-alpha = 0.01 
-
-warmup_steps = steps_per_epoch * warmup_epochs
-decay_steps  = steps_per_epoch * (decay_epochs - warmup_epochs)
-total_steps  = warmup_steps + decay_steps
+total_steps = steps_per_epoch * EPOCHS
+warmup_steps = steps_per_epoch * 15
+initial_lr = 1e-3
+alpha = 0.05  # final lr fraction
 
 
 class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -1271,25 +1226,16 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         total_steps = tf.cast(self.total_steps, tf.float32)
 
         def warmup_lr():
-            return self.initial_lr * step / tf.maximum(warmup_steps, 1.0)
+            return self.initial_lr * step / warmup_steps
 
         def decay_lr():
-            decay_span = tf.maximum(total_steps - warmup_steps, 1.0)
-            progress = (step - warmup_steps) / decay_span
+            progress = (step - warmup_steps) / (total_steps - warmup_steps)
             progress = tf.clip_by_value(progress, 0.0, 1.0)
-
-            cosine_decay = 0.5 * (1 + tf.cos(math.pi * progress))
+            cosine_decay = 0.5 * (1 + tf.cos(tf.constant(math.pi) * progress))
             decayed = (1 - self.alpha) * cosine_decay + self.alpha
-
             return self.initial_lr * decayed
 
-        lr = tf.cond(step < warmup_steps, warmup_lr, decay_lr)
-
-        return tf.where(
-            step >= total_steps,
-            self.initial_lr * self.alpha,
-            lr
-        )
+        return tf.cond(step < warmup_steps, warmup_lr, decay_lr)
 
     def get_config(self):
         return {
@@ -1315,9 +1261,10 @@ lr_schedule = WarmupCosineDecay(
     alpha=alpha,
 )
 
-optimizer = tf.keras.optimizers.Adam(
-    learning_rate=lr_schedule, weight_decay=1e-4, clipnorm=1.0
+optimizer = tf.keras.optimizers.AdamW(
+    learning_rate=lr_schedule, weight_decay=1e-3, clipnorm=1.0
 )
+
 
 model.summary()
 
