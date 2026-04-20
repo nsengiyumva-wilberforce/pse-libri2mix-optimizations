@@ -1,6 +1,7 @@
 import os
+
 import warnings
-warnings.filterwarnings("ignore", category=UserWarning,message=".*unable to load libtensorflow_io_plugins.so.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
 import sys
 import time
@@ -12,9 +13,12 @@ from pesq import pesq
 from pystoi import stoi
 import csv
 
+import warnings
+warnings.filterwarnings("ignore")
 import pandas as pd
 import numpy as np
 import onnxruntime as ort
+import sys
 import librosa
 import matplotlib.pyplot as plt
 from IPython.display import Audio, display, HTML
@@ -74,8 +78,6 @@ from tensorflow.keras.layers import (
 
 tf.config.optimizer.set_jit(True)
 
-
-import os
 
 #--------------------------------
 # HELPERS FOR DATA LOADING
@@ -209,11 +211,13 @@ def load_from_folder(data_root, split, verify_speaker=True):
 
     return load_scp(mix_path, ref_path, tgt_path, verify_speaker)
 
-N_FFT = 510  # 128 freq bins
-FRAME_LENGTH = 400
-FRAME_STEP = 160
+sr = 8000
+n_fft = 510  # 128 freq bins
+frame_length = 400
+frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
-BATCH_SIZE = 1
+total_length = 3.855  # seconds
+batch_size = 4
 EPOCHS = 300
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
@@ -233,6 +237,8 @@ TEST_MIX, TEST_REF, TEST_TGT = load_scp(
     "data/test/auxs1.scp",  # enrollment
     "data/test/ref.scp",  # clean target
 )
+TARGET_SR = 8000
+
 
 def load_audio_py(path):
     # handle all possible types safely
@@ -293,13 +299,13 @@ def tf_rms(x, eps=1e-8):
 @tf.function
 def convert_to_spectrogram(wav_corr, wav_ref, wavclean):
     spectrogram_corr = tf.signal.stft(
-        wav_corr, frame_length=FRAME_LENGTH, fft_length=N_FFT, frame_step=FRAME_STEP
+        wav_corr, frame_length=frame_length, fft_length=n_fft, frame_step=frame_step
     )
     spectrogram_ref = tf.signal.stft(
-        wav_ref, frame_length=FRAME_LENGTH, fft_length=N_FFT, frame_step=FRAME_STEP
+        wav_ref, frame_length=frame_length, fft_length=n_fft, frame_step=frame_step
     )
     spectrogram = tf.signal.stft(
-        wavclean, frame_length=FRAME_LENGTH, fft_length=N_FFT, frame_step=FRAME_STEP
+        wavclean, frame_length=frame_length, fft_length=n_fft, frame_step=frame_step
     )
     return spectrogram_corr, spectrogram_ref, spectrogram
 
@@ -308,17 +314,17 @@ def convert_to_spectrogram(wav_corr, wav_ref, wavclean):
 def convert_to_spectrogram_multiview(wav_corr, wav_ref_segments, wavclean):
     # main mixture
     spectrogram_corr = tf.signal.stft(
-        wav_corr, frame_length=FRAME_LENGTH, frame_step=FRAME_STEP, fft_length=N_FFT
+        wav_corr, frame_length=frame_length, frame_step=frame_step, fft_length=n_fft
     )
     # clean target
     spectrogram_clean = tf.signal.stft(
-        wavclean, frame_length=FRAME_LENGTH, frame_step=FRAME_STEP, fft_length=N_FFT
+        wavclean, frame_length=frame_length, frame_step=frame_step, fft_length=n_fft
     )
     # reference: vectorized over K
     # wav_ref_segments: (K, N)
     spectrogram_refs = tf.map_fn(
         lambda x: tf.signal.stft(
-            x, frame_length=FRAME_LENGTH, frame_step=FRAME_STEP, fft_length=N_FFT
+            x, frame_length=frame_length, frame_step=frame_step, fft_length=n_fft
         ),
         wav_ref_segments,
         fn_output_signature=tf.complex64,
@@ -382,19 +388,19 @@ def sample_reference_segments(wav, K, segment_len):
 
 
 def load_libri_speech_triplet_multiview(
-    mix_path, ref_path, tgt_path, K=5, ref_len=8000 * 6
+    mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2
 ):
-    clean_wav = preprocess_tf(tgt_path)
+    clean = preprocess_tf(tgt_path)
     noisy = preprocess_tf(mix_path)
     ref = preprocess_tf(ref_path)
     mix_chunks = split_into_chunks(noisy, CHUNK_SIZE, STRIDE)
-    clean_chunks = split_into_chunks(clean_wav, CHUNK_SIZE, STRIDE)
+    clean_chunks = split_into_chunks(clean, CHUNK_SIZE, STRIDE)
     ref_segments = sample_reference_segments(ref, K, ref_len)
     return mix_chunks, ref_segments, clean_chunks
 
 
 def configure_libri_speech_dataset(
-    mixture_files, reference_files, target_files, is_train=True, K=5
+    mixture_files, reference_files, target_files, is_train=True, K=4
 ):
     ds = tf.data.Dataset.from_tensor_slices(
         (mixture_files, reference_files, target_files)
@@ -420,7 +426,7 @@ def configure_libri_speech_dataset(
 
     # 4. STFT
     ds = ds.map(
-        convert_to_spectrogram_multiview,
+        lambda mix, ref, clean: convert_to_spectrogram_multiview(mix, ref, clean),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
 
@@ -447,15 +453,15 @@ test_ds = configure_libri_speech_dataset(TEST_MIX, TEST_REF, TEST_TGT, is_train=
 
 
 # # 4. Batch and Prefetch
-train_dataset = train_ds.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
-val_dataset = val_ds.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
-test_dataset = test_ds.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+train_dataset = train_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+val_dataset = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+test_dataset = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 for noise, clean in train_dataset.take(1):
     print(noise["noisy_main"].shape, noise["noisy_ref"].shape, clean.shape)
-total_train_samples = len(TRAIN_MIX)
+total_train_samples = 60000
 val_size = len(DEV_MIX)
-steps_per_epoch = total_train_samples // BATCH_SIZE
-validation_steps = val_size // BATCH_SIZE
+steps_per_epoch = total_train_samples // batch_size
+validation_steps = val_size // batch_size
 print(f"Train steps: {steps_per_epoch}")
 print(f"Val steps: {validation_steps}")
 
@@ -737,7 +743,7 @@ def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="x
             raise ValueError(f"Unknown block type: {block_type}")
         
         # Unique name using the prefix and index
-        x = RNN(cell, return_sequences=True,
+        x = RNN(cell, return_sequences=True, 
                 name=f'{prefix}_{block_type}_{i}')(x)
         
         if residual.shape[-1] == x.shape[-1]:
@@ -747,7 +753,7 @@ def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="x
             x = LayerNormalization(epsilon=1e-6, name=f'{prefix}_ln_{i}')(x)
         
         if i < num_layers - 1:
-            x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
+            x = Dropout(0.3, name=f'{prefix}_do_{i}')(x)
     
     return x
 
@@ -981,7 +987,7 @@ def custom_unet(
         upsample = upsample_simple
 
     main_input = Input(input_shape, name="noisy_main")  # (T, F, C)
-    ref_input = Input((None, None, 256, 2), name="noisy_ref")
+    ref_input = Input((4, 98, 256, 2), name="noisy_ref")
     main_input_copy = ops.copy(main_input)
 
     x = main_input / (ops.std(main_input) + 1e-5)
@@ -1007,27 +1013,59 @@ def custom_unet(
     ref_enc = ref_x
     filters_ref = filters // (2**num_layers)
     for l in range(num_layers):
-        # first look at the frequency bins by applying a 1x3 convolution
+
+        # Preserve input for parallel branches
+        x_in = ref_enc
+
+        # ----- Frequency branch (1 × 3) -----
         ref_enc_f = TimeDistributed(
-            Conv2D(filters_ref, (1, 3), activation=activation, padding="same")
-        )(ref_enc)
+            Conv2D(filters_ref, (1, 3), padding="same",
+                kernel_initializer="he_normal")
+        )(x_in)
         if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc_f)
-        # then look at the time dimension by applying a 3x1 convolution
-        ref_enc__t = TimeDistributed(
-            Conv2D(filters_ref, (3, 1), activation=activation, padding="same")
-        )(ref_enc)
+            ref_enc_f = TimeDistributed(BatchNormalization())(ref_enc_f)
+        ref_enc_f = Activation(activation)(ref_enc_f)
+
+        # ----- Time branch (3 × 1) -----
+        ref_enc_t = TimeDistributed(
+            Conv2D(filters_ref, (3, 1), padding="same",
+                kernel_initializer="he_normal")
+        )(x_in)
         if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc__t)
-        # concatenate them
-        ref_enc = Concatenate()([ref_enc_f, ref_enc__t])
-        # then look at both time and frequency with a 3x3 convolution
+            ref_enc_t = TimeDistributed(BatchNormalization())(ref_enc_t)
+        ref_enc_t = Activation(activation)(ref_enc_t)
+
+        # ----- Merge (concatenate along channels) -----
+        ref_enc = Concatenate(axis=-1)([
+            ref_enc_f * 0.5,
+            ref_enc_t * 0.5
+        ])
+
+        # ----- Joint TF modeling (compress channels back) -----
         ref_enc = TimeDistributed(
-            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
+            Conv2D(filters_ref, (3, 3), padding="same",
+                kernel_initializer="he_normal")
         )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
+        ref_enc = Activation(activation)(ref_enc)
+
+        # ----- Optional deeper refinement (VGG-style) -----
+        ref_enc = TimeDistributed(
+            Conv2D(filters_ref, (3, 3), padding="same",
+                kernel_initializer="he_normal")
+        )(ref_enc)
+        if use_batch_norm:
+            ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
+        ref_enc = Activation(activation)(ref_enc)
+
+        # ----- Regularization (important for your overfitting) -----
+        ref_enc = TimeDistributed(SpatialDropout2D(0.2))(ref_enc)
+
+        # ----- Downsample (frequency only) -----
         ref_enc = TimeDistributed(MaxPooling2D((1, 2)))(ref_enc)
+
+        # ----- Increase capacity -----
         filters_ref *= 2
 
     ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
@@ -1057,7 +1095,6 @@ def custom_unet(
 
     # 4. Apply GRU on the compressed dimension (hidden_dim=256 is plenty, medium, small-256, large, 1024)
     x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main")
-
     x_seq = layers.Add()([x_seq, bottleneck_skip])
 
     # 5. Project back up to the original flattened size (4096)
@@ -1081,6 +1118,7 @@ def custom_unet(
         x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
         # Apply FiLM conditioning after upsampling but before concatenation
         x = film(x, speaker_embed)
+
         if use_attention:
             x = attention_concat(conv_below=x, skip_connection=conv)
         else:
@@ -1140,7 +1178,7 @@ model = custom_unet(
     num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
-    dropout=0.2,
+    dropout=0.5,
     output_activation="sigmoid",
 )
 callbacks = [
@@ -1210,10 +1248,14 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
             2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
 
 
-total_steps = steps_per_epoch * EPOCHS
-warmup_steps = steps_per_epoch * 10
+warmup_epochs = 15
+decay_epochs = 100
 initial_lr = 1e-4
-alpha = 0.05  # final lr fraction
+alpha = 0.01 
+
+warmup_steps = steps_per_epoch * warmup_epochs
+decay_steps  = steps_per_epoch * (decay_epochs - warmup_epochs)
+total_steps  = warmup_steps + decay_steps
 
 
 class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -1229,16 +1271,25 @@ class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         total_steps = tf.cast(self.total_steps, tf.float32)
 
         def warmup_lr():
-            return self.initial_lr * step / warmup_steps
+            return self.initial_lr * step / tf.maximum(warmup_steps, 1.0)
 
         def decay_lr():
-            progress = (step - warmup_steps) / (total_steps - warmup_steps)
+            decay_span = tf.maximum(total_steps - warmup_steps, 1.0)
+            progress = (step - warmup_steps) / decay_span
             progress = tf.clip_by_value(progress, 0.0, 1.0)
-            cosine_decay = 0.5 * (1 + tf.cos(tf.constant(math.pi) * progress))
+
+            cosine_decay = 0.5 * (1 + tf.cos(math.pi * progress))
             decayed = (1 - self.alpha) * cosine_decay + self.alpha
+
             return self.initial_lr * decayed
 
-        return tf.cond(step < warmup_steps, warmup_lr, decay_lr)
+        lr = tf.cond(step < warmup_steps, warmup_lr, decay_lr)
+
+        return tf.where(
+            step >= total_steps,
+            self.initial_lr * self.alpha,
+            lr
+        )
 
     def get_config(self):
         return {
@@ -1265,7 +1316,7 @@ lr_schedule = WarmupCosineDecay(
 )
 
 optimizer = tf.keras.optimizers.Adam(
-    learning_rate=lr_schedule, weight_decay=1e-3, clipnorm=1.0
+    learning_rate=lr_schedule, weight_decay=1e-4, clipnorm=1.0
 )
 
 model.summary()
@@ -1339,7 +1390,7 @@ def sample_reference_segments_full(wav, K, segment_len):
     )
 
 
-def enhance_audio_consistent(noisy_wav, ref_wav, model, K=5, overlap=0.5):
+def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
     """
     Inference aligned with training distribution.
     - Waveform chunking
@@ -1362,7 +1413,7 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=5, overlap=0.5):
     CHUNK_LEN = CHUNK_SIZE # MUST match training (change if you trained on 32000)
     HOP_LEN = int(CHUNK_LEN * (1 - overlap))
 
-    REF_LEN = 48000
+    REF_LEN = 16000  # already correct (98 frames)
 
     total_len = len(noisy_wav)
 
@@ -1379,12 +1430,12 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=5, overlap=0.5):
     ref_specs_complex = tf.map_fn(
         lambda x: tf.signal.stft(
             x,
-            frame_length=FRAME_LENGTH,
-            frame_step=FRAME_STEP,
-            fft_length=N_FFT,
+            frame_length=frame_length,
+            frame_step=frame_step,
+            fft_length=n_fft,
         ),
         ref_segments,
-        fn_output_signature=tf.TensorSpec(shape=[None, 256], dtype=tf.complex64),
+        fn_output_signature=tf.TensorSpec(shape=[98, 256], dtype=tf.complex64),
     )
 
     ref_specs = complex_to_2ch(ref_specs_complex)[None, ...]
@@ -1404,7 +1455,7 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=5, overlap=0.5):
 
         # ---- SAME preprocessing as training ----
         noisy_spec = tf.signal.stft(
-            chunk_tf, frame_length=FRAME_LENGTH, frame_step=FRAME_STEP, fft_length=N_FFT
+            chunk_tf, frame_length=frame_length, frame_step=frame_step, fft_length=n_fft
         )
 
         noisy_2ch = complex_to_2ch(noisy_spec)[None, ...]
@@ -1416,9 +1467,9 @@ def enhance_audio_consistent(noisy_wav, ref_wav, model, K=5, overlap=0.5):
 
         enhanced_chunk = tf.signal.inverse_stft(
             enhanced_complex,
-            frame_length=FRAME_LENGTH,
-            frame_step=FRAME_STEP,
-            fft_length=N_FFT,
+            frame_length=frame_length,
+            frame_step=frame_step,
+            fft_length=n_fft,
         ).numpy()
 
         # ---- overlap-add ----
@@ -1480,6 +1531,7 @@ def sanitize(x):
 # ==========================================================
 def main():
     print(f"Evaluating {len(TEST_MIX)} samples")
+
     results = []
 
     for mix_path, ref_path, tgt_path in tqdm(
