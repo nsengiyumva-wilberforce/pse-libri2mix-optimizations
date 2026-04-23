@@ -397,7 +397,7 @@ val_dataset = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 test_dataset = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 for noise, clean in train_dataset.take(1):
     print(noise["noisy_main"].shape, noise["noisy_ref"].shape, clean.shape)
-total_train_samples = len(TRAIN_MIX)
+total_train_samples = 60000
 val_size = len(DEV_MIX)
 steps_per_epoch = total_train_samples // batch_size
 validation_steps = val_size // batch_size
@@ -1083,7 +1083,7 @@ model = custom_unet(
     num_classes=2,
     filters=32,
     use_dropout_on_upsampling=False,
-    num_layers=4,
+    num_layers=7,
     use_attention=False,
     upsample_mode="deconv",
     dropout=0.4,
@@ -1157,7 +1157,7 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
 
 
 total_steps = steps_per_epoch * EPOCHS
-warmup_steps = steps_per_epoch * 10
+warmup_steps = steps_per_epoch * 3
 initial_lr = 1e-4
 alpha = 0.05  # final lr fraction
 
