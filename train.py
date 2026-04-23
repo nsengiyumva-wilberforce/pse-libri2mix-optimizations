@@ -81,31 +81,13 @@ tf.config.optimizer.set_jit(True)
 
 #--------------------------------
 # HELPERS FOR DATA LOADING
-#--------------------------------
-def load_scp(mix_path, ref_path, tgt_path, verify_speaker=True):
+def load_scp(mix_path, ref_path, tgt_path):
     """
-    Loads three SCP files and returns aligned lists:
-        (mix, ref, tgt)
-
-    Fixes:
-    - Handles mismatched key formats (s1/...wav vs plain IDs)
-    - Keeps strict alignment via normalized keys
+    Loads three SCP files and returns three aligned lists:
+    (mix, ref, tgt)
+    Each SCP file must have format:
+        <utt_id> <filepath>
     """
-
-    def normalize_key(key):
-        """
-        Convert different key formats into a common ID.
-
-        Examples:
-        s1/1272-128104-0000_2035-147961-0014.wav
-        → 1272-128104-0000_2035-147961-0014
-
-        1272-128104-0000_2035-147961-0014
-        → unchanged
-        """
-        key = os.path.basename(key)           # remove s1/, s2/, etc.
-        key = os.path.splitext(key)[0]        # remove .wav/.flac
-        return key
 
     def get_dict(path):
         d = {}
@@ -114,102 +96,59 @@ def load_scp(mix_path, ref_path, tgt_path, verify_speaker=True):
                 parts = line.strip().split()
                 if len(parts) < 2:
                     continue
-
-                raw_key = parts[0]
-                key = normalize_key(raw_key)
-
+                key = parts[0]
                 value = parts[1]
                 if not os.path.isabs(value):
                     value = os.path.abspath(value)
-
                 d[key] = value
-
         return d
-
-    def extract_spk_id_from_key(key):
-        return key.split("-")[0]
-
-    def extract_spk_id_from_path(path):
-        fname = os.path.basename(path)
-        return fname.split("-")[0]
 
     # ---- Load all SCPs ----
     mix_d = get_dict(mix_path)
     ref_d = get_dict(ref_path)
     tgt_d = get_dict(tgt_path)
-
     # ---- Debug counts ----
     print("\n=== SCP LOAD DEBUG ===")
     print(f"Mix entries: {len(mix_d)}")
     print(f"Ref entries: {len(ref_d)}")
     print(f"Tgt entries: {len(tgt_d)}")
-
-    # ---- Align keys (AFTER normalization) ----
+    # ---- Align keys ----
     common_keys = sorted(set(mix_d) & set(ref_d) & set(tgt_d))
-
     if len(common_keys) == 0:
-        print("\n=== KEY DEBUG ===")
-        print("Mix sample keys:", list(mix_d.keys())[:3])
-        print("Ref sample keys:", list(ref_d.keys())[:3])
-        print("Tgt sample keys:", list(tgt_d.keys())[:3])
-
         raise ValueError(
-            "No overlapping keys after normalization.\n"
-            "Your SCP keys are fundamentally inconsistent."
+            "No overlapping keys found between SCP files.\n"
+            "Check that all SCPs use identical utterance IDs."
         )
-
     print(f"Aligned samples: {len(common_keys)}")
-
     # ---- Build aligned lists ----
-    mix_list, ref_list, tgt_list = [], [], []
-
-    speaker_mismatch = 0
-
-    for k in common_keys:
-        mix_path_k = mix_d[k]
-        ref_path_k = ref_d[k]
-        tgt_path_k = tgt_d[k]
-
-        # ---- Speaker verification ----
-        if verify_speaker:
-            spk_mix = extract_spk_id_from_key(k)
-            spk_ref = extract_spk_id_from_path(ref_path_k)
-
-            if spk_mix != spk_ref:
-                speaker_mismatch += 1
-
-        mix_list.append(mix_path_k)
-        ref_list.append(ref_path_k)
-        tgt_list.append(tgt_path_k)
-
-    # ---- Sanity check ----
+    mix_list = [mix_d[k] for k in common_keys]
+    ref_list = [ref_d[k] for k in common_keys]
+    tgt_list = [tgt_d[k] for k in common_keys]
+    # ---- Sanity check (first sample) ----
     print("\n=== SAMPLE CHECK ===")
     print("Mix:", mix_list[0])
     print("Ref:", ref_list[0])
     print("Tgt:", tgt_list[0])
-
-    # ---- Warnings ----
+    # ---- Critical warning ----
     if ref_list[0] == tgt_list[0]:
-        print("\n[WARNING] REF == TARGET → conditioning collapse!")
-
-    if verify_speaker and speaker_mismatch > 0:
-        print(f"\n[WARNING] Speaker mismatch in {speaker_mismatch} samples")
-        print("Check your aux generation logic.")
-
+        print("\n[WARNING] REF == TARGET → conditioning will collapse!")
     return mix_list, ref_list, tgt_list
 
 
-#-------------------------------------------------------
-# Folder-based loader
-#-------------------------------------------------------
-def load_from_folder(data_root, split, verify_speaker=True):
+# -------------------------------------------------------
+# OPTIONAL: helper if you later want folder-based loading
+# -------------------------------------------------------
+def load_from_folder(data_root, split):
+    """
+    Alternative loader for:
+        data_root/train/{auxs1.scp, mix_clean.scp, ref.scp}
+    """
     base = os.path.join(data_root, split)
-
     mix_path = os.path.join(base, "mix_clean.scp")
-    ref_path = os.path.join(base, "auxs1.scp")
-    tgt_path = os.path.join(base, "ref.scp")
+    ref_path = os.path.join(base, "auxs1.scp")  # enrollment
+    tgt_path = os.path.join(base, "ref.scp")  # clean target
+    return load_scp(mix_path, ref_path, tgt_path)
 
-    return load_scp(mix_path, ref_path, tgt_path, verify_speaker)
 
 sr = 8000
 n_fft = 510  # 128 freq bins
@@ -217,8 +156,8 @@ frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 4
-EPOCHS = 300
+batch_size = 12
+EPOCHS = 30
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
 TARGET_SR = 8000
@@ -458,7 +397,7 @@ val_dataset = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 test_dataset = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 for noise, clean in train_dataset.take(1):
     print(noise["noisy_main"].shape, noise["noisy_ref"].shape, clean.shape)
-total_train_samples = 60000
+total_train_samples = len(TRAIN_MIX)
 val_size = len(DEV_MIX)
 steps_per_epoch = total_train_samples // batch_size
 validation_steps = val_size // batch_size
@@ -753,7 +692,7 @@ def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="x
             x = LayerNormalization(epsilon=1e-6, name=f'{prefix}_ln_{i}')(x)
         
         if i < num_layers - 1:
-            x = Dropout(0.3, name=f'{prefix}_do_{i}')(x)
+            x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
     
     return x
 
@@ -957,6 +896,13 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
 
     return x
 
+def plot_spectrogram(spectrogram, ax):
+    log_spec = np.log(spectrogram.T + np.finfo(float).eps)
+    height = log_spec.shape[0]
+    width = log_spec.shape[1]
+    X = np.linspace(0, np.size(spectrogram), num=width, dtype=int)
+    Y = range(height)
+    ax.pcolormesh(X, Y, log_spec)
 
 
 def custom_unet(
@@ -986,22 +932,6 @@ def custom_unet(
     x = main_input / (ops.std(main_input) + 1e-5)
     ref_x = ref_input / (ops.std(ref_input) + 1e-5)
     # plot the first element of the batch for both main and reference inputs
-
-    down_layers = []
-    for l in range(num_layers):
-        # x = conv2d_block(
-        #     x,
-        #     filters=filters,
-        #     use_batch_norm=use_batch_norm,
-        #     dropout=dropout,
-        #     dropout_type=dropout_type,
-        #     activation=activation,
-        # )
-        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
-        down_layers.append(x)
-        x = MaxPooling2D((2, 2))(x)
-        dropout += dropout_change_per_layer
-        filters = filters * 2
 
     ref_enc = ref_x
     filters_ref = filters // (2**num_layers)
@@ -1037,6 +967,25 @@ def custom_unet(
     ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
 
+
+    down_layers = []
+    for l in range(num_layers):
+        # x = conv2d_block(
+        #     x,
+        #     filters=filters,
+        #     use_batch_norm=use_batch_norm,
+        #     dropout=dropout,
+        #     dropout_type=dropout_type,
+        #     activation=activation,
+        # )
+        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        down_layers.append(x)
+        x = MaxPooling2D((2, 2))(x)
+        x = cross_attention_cond(x, speaker_embed)
+        dropout += dropout_change_per_layer
+        filters = filters * 2
+
+    
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
 
     # 1. Flatten the spatial (F_small) and channel (C_small) dimensions
@@ -1056,6 +1005,7 @@ def custom_unet(
 
     # 4. Apply GRU on the compressed dimension (hidden_dim=256 is plenty, medium, small-256, large, 1024)
     x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main")
+
     x_seq = layers.Add()([x_seq, bottleneck_skip])
 
     # 5. Project back up to the original flattened size (4096)
@@ -1079,19 +1029,18 @@ def custom_unet(
         x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
         # Apply FiLM conditioning after upsampling but before concatenation
         x = film(x, speaker_embed)
-
-        x = concatenate([x, conv])
-
-        x = cross_attention_cond(x, speaker_embed)
-        # x = conv2d_block(
-        #     inputs=x,
-        #     filters=filters,
-        #     use_batch_norm=use_batch_norm,
-        #     dropout=dropout,
-        #     dropout_type=dropout_type,
-        #     activation=activation,
-        # )
-        x=tf_alternating_block(x, filters, activation, use_bn=False, name_prefix=f"up_{filters}")
+        if use_attention:
+            x = attention_concat(conv_below=x, skip_connection=conv)
+        else:
+            x = concatenate([x, conv])
+        x = conv2d_block(
+            inputs=x,
+            filters=filters,
+            use_batch_norm=use_batch_norm,
+            dropout=dropout,
+            dropout_type=dropout_type,
+            activation=activation,
+        )
     # --- Split noisy input into real / imag ---
     input_r = main_input_copy[..., 0:1]
     input_i = main_input_copy[..., 1:2]
@@ -1137,7 +1086,7 @@ model = custom_unet(
     num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
-    dropout=0.3,
+    dropout=0.4,
     output_activation="sigmoid",
 )
 callbacks = [
@@ -1208,8 +1157,8 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
 
 
 total_steps = steps_per_epoch * EPOCHS
-warmup_steps = steps_per_epoch * 15
-initial_lr = 1e-3
+warmup_steps = steps_per_epoch * 10
+initial_lr = 1e-4
 alpha = 0.05  # final lr fraction
 
 
@@ -1261,10 +1210,9 @@ lr_schedule = WarmupCosineDecay(
     alpha=alpha,
 )
 
-optimizer = tf.keras.optimizers.AdamW(
+optimizer = tf.keras.optimizers.Adam(
     learning_rate=lr_schedule, weight_decay=1e-3, clipnorm=1.0
 )
-
 
 model.summary()
 
