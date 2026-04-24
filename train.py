@@ -156,7 +156,7 @@ frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 12
+batch_size = 6
 EPOCHS = 30
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
@@ -934,7 +934,8 @@ def custom_unet(
     # plot the first element of the batch for both main and reference inputs
 
     ref_enc = ref_x
-    filters_ref = filters // (2**num_layers)
+    filters_ref = filters
+    tf.print("Initial ref filters:", filters_ref)
     for l in range(num_layers):
         # first look at the frequency bins by applying a 1x3 convolution
         ref_enc_f = TimeDistributed(
@@ -967,25 +968,17 @@ def custom_unet(
     ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
 
-
     down_layers = []
     for l in range(num_layers):
-        # x = conv2d_block(
-        #     x,
-        #     filters=filters,
-        #     use_batch_norm=use_batch_norm,
-        #     dropout=dropout,
-        #     dropout_type=dropout_type,
-        #     activation=activation,
-        # )
         x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        x = cross_attention_cond(x, speaker_embed)
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
-        x = cross_attention_cond(x, speaker_embed)
         dropout += dropout_change_per_layer
         filters = filters * 2
 
-    
+
+
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
 
     # 1. Flatten the spatial (F_small) and channel (C_small) dimensions
@@ -1083,10 +1076,10 @@ model = custom_unet(
     num_classes=2,
     filters=32,
     use_dropout_on_upsampling=False,
-    num_layers=7,
+    num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
-    dropout=0.4,
+    dropout=0.2,
     output_activation="sigmoid",
 )
 callbacks = [
@@ -1157,7 +1150,7 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
 
 
 total_steps = steps_per_epoch * EPOCHS
-warmup_steps = steps_per_epoch * 3
+warmup_steps = steps_per_epoch * 5
 initial_lr = 1e-4
 alpha = 0.05  # final lr fraction
 
