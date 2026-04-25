@@ -156,8 +156,8 @@ frame_length = 400
 frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
-batch_size = 6
-EPOCHS = 30
+batch_size = 4
+EPOCHS = 300
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
 TARGET_SR = 8000
@@ -933,9 +933,24 @@ def custom_unet(
     ref_x = ref_input / (ops.std(ref_input) + 1e-5)
     # plot the first element of the batch for both main and reference inputs
 
+    down_layers = []
+    for l in range(num_layers):
+        # x = conv2d_block(
+        #     x,
+        #     filters=filters,
+        #     use_batch_norm=use_batch_norm,
+        #     dropout=dropout,
+        #     dropout_type=dropout_type,
+        #     activation=activation,
+        # )
+        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        down_layers.append(x)
+        x = MaxPooling2D((2, 2))(x)
+        dropout += dropout_change_per_layer
+        filters = filters * 2
+
     ref_enc = ref_x
-    filters_ref = filters
-    tf.print("Initial ref filters:", filters_ref)
+    filters_ref = filters // (2**num_layers)
     for l in range(num_layers):
         # first look at the frequency bins by applying a 1x3 convolution
         ref_enc_f = TimeDistributed(
@@ -967,17 +982,6 @@ def custom_unet(
     # )
     ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
-
-    down_layers = []
-    for l in range(num_layers):
-        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
-        x = cross_attention_cond(x, speaker_embed)
-        down_layers.append(x)
-        x = MaxPooling2D((2, 2))(x)
-        dropout += dropout_change_per_layer
-        filters = filters * 2
-
-
 
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
 
@@ -1026,6 +1030,8 @@ def custom_unet(
             x = attention_concat(conv_below=x, skip_connection=conv)
         else:
             x = concatenate([x, conv])
+
+        x = cross_attention_cond(x, speaker_embed)
         x = conv2d_block(
             inputs=x,
             filters=filters,
@@ -1150,7 +1156,7 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
 
 
 total_steps = steps_per_epoch * EPOCHS
-warmup_steps = steps_per_epoch * 5
+warmup_steps = steps_per_epoch * 30
 initial_lr = 1e-4
 alpha = 0.05  # final lr fraction
 
@@ -1211,14 +1217,14 @@ model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-history = model.fit(
-    train_dataset,
-    epochs=EPOCHS,
-    # steps_per_epoch=steps_per_epoch,
-    validation_data=val_dataset,
-    # validation_steps=validation_steps,
-    callbacks=callbacks + [LrLogger()],
-)
+# history = model.fit(
+#     train_dataset,
+#     epochs=EPOCHS,
+#     # steps_per_epoch=steps_per_epoch,
+#     validation_data=val_dataset,
+#     # validation_steps=validation_steps,
+#     callbacks=callbacks + [LrLogger()],
+# )
 
 
 # Evaluate the model on test set

@@ -111,7 +111,7 @@ STOI (mix):   0.714
 STOI (enh):   0.807
 STOIi:        0.093
 
-# on 25 epochs, it starts overfitting:
+# on 25 epochs, it starts overfitting with augmentation:
 SI-SDR (mix): -0.03 
 SI-SDR (enh): 6.99 
 SI-SDRi: 7.02 
@@ -121,5 +121,17 @@ PESQi: 0.555
 STOI (mix): 0.714 
 STOI (enh): 0.810 
 STOIi: 0.096
+# on 54 epochs, it starts overfitting:
+========== FINAL RESULTS ==========
+SI-SDR (mix): -0.03
+SI-SDR (enh): 6.95
+SI-SDRi:      6.99
+PESQ (mix):   1.603
+PESQ (enh):   2.155
+PESQi:        0.553
+STOI (mix):   0.714
+STOI (enh):   0.807
+STOIi:        0.094
+
 
 
