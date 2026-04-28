@@ -693,8 +693,8 @@ def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="x
             x = Add(name=f'{prefix}_add_{i}')([residual, x])
             x = LayerNormalization(epsilon=1e-6, name=f'{prefix}_ln_{i}')(x)
         
-        if i < num_layers - 1:
-            x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
+        # if i < num_layers - 1:
+        #     x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
     
     return x
 
@@ -958,7 +958,7 @@ def custom_unet(
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc__t)
         ref_enc = Concatenate()([ref_enc_f, ref_enc__t])
         ref_enc = TimeDistributed(
-            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
+            Conv2D(filters_ref, (2, 2), activation=activation, padding="same")
         )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
@@ -994,7 +994,7 @@ def custom_unet(
     for conv in reversed(down_layers):
         filters //= 2  # decreasing number of filters with each layer
         dropout -= dropout_change_per_layer
-        x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
+        x = upsample(filters, (3, 3), strides=(2, 2), padding="same")(x)
         x = film(x, speaker_embed)
         if use_attention:
             x = attention_concat(conv_below=x, skip_connection=conv)
@@ -1190,7 +1190,8 @@ model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 history = model.fit(
     train_dataset,
     epochs=EPOCHS,
-    # steps_per_epoch=steps_per_epoch,
+    steps_per_epoch=steps_per_epoch,
+    validation_steps=validation_steps,
     validation_data=val_dataset,
     # validation_steps=validation_steps,
     callbacks=callbacks + [LrLogger()],
