@@ -157,8 +157,6 @@ frame_step = 160
 trim_length = 31000  # 384 time frames after STFT
 total_length = 3.855  # seconds
 batch_size = 4
-TRAIN_STEPS = 60000 // batch_size
-VAL_STEPS = 3600 // batch_size
 EPOCHS = 300
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
@@ -399,7 +397,7 @@ val_dataset = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 test_dataset = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 for noise, clean in train_dataset.take(1):
     print(noise["noisy_main"].shape, noise["noisy_ref"].shape, clean.shape)
-total_train_samples = 60000
+total_train_samples = len(TRAIN_MIX)
 val_size = len(DEV_MIX)
 steps_per_epoch = total_train_samples // batch_size
 validation_steps = val_size // batch_size
@@ -693,8 +691,8 @@ def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="x
             x = Add(name=f'{prefix}_add_{i}')([residual, x])
             x = LayerNormalization(epsilon=1e-6, name=f'{prefix}_ln_{i}')(x)
         
-        # if i < num_layers - 1:
-        #     x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
+        if i < num_layers - 1:
+            x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
     
     return x
 
@@ -828,7 +826,7 @@ def conv2d_block(
     return c
 
 
-def cross_attention_cond(x, speaker_embedding, num_heads=8, key_dim=128):
+def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
     """
     Cross-attention conditioning.
 
@@ -909,8 +907,7 @@ def plot_spectrogram(spectrogram, ax):
 
 def custom_unet(
     input_shape,
-    num_classes=1,
-    activation="relu",
+    activation="leaky_relu",
     use_batch_norm=True,
     upsample_mode="deconv",
     dropout=0.3,
@@ -920,7 +917,6 @@ def custom_unet(
     use_attention=False,
     filters=16,
     num_layers=4,
-    output_activation="sigmoid",
 ):
     if upsample_mode == "deconv":
         upsample = upsample_conv
@@ -937,6 +933,14 @@ def custom_unet(
 
     down_layers = []
     for l in range(num_layers):
+        # x = conv2d_block(
+        #     x,
+        #     filters=filters,
+        #     use_batch_norm=use_batch_norm,
+        #     dropout=dropout,
+        #     dropout_type=dropout_type,
+        #     activation=activation,
+        # )
         x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
@@ -946,19 +950,23 @@ def custom_unet(
     ref_enc = ref_x
     filters_ref = filters // (2**num_layers)
     for l in range(num_layers):
+        # first look at the frequency bins by applying a 1x3 convolution
         ref_enc_f = TimeDistributed(
             Conv2D(filters_ref, (1, 3), activation=activation, padding="same")
         )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc_f)
+        # then look at the time dimension by applying a 3x1 convolution
         ref_enc__t = TimeDistributed(
             Conv2D(filters_ref, (3, 1), activation=activation, padding="same")
         )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc__t)
+        # concatenate them
         ref_enc = Concatenate()([ref_enc_f, ref_enc__t])
+        # then look at both time and frequency with a 3x3 convolution
         ref_enc = TimeDistributed(
-            Conv2D(filters_ref, (2, 2), activation=activation, padding="same")
+            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
         )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
@@ -966,26 +974,45 @@ def custom_unet(
         filters_ref *= 2
 
     ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
-
+    # Apply GRU Block
+    # ref_seq = add_gru_block(
+    #     ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
+    # )
     ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
     speaker_embed = GlobalAveragePooling1D()(ref_seq)
 
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
 
+    # 1. Flatten the spatial (F_small) and channel (C_small) dimensions
+    # Current x: (None, 24, 16, 256) -> Reshape to: (None, 24, 4096)
     x_flat = Reshape((T_small, F_small * C_small), name="bottleneck_flatten")(x)
 
+    # 2. Project 4096 down to 256 (This is where you save millions of parameters!) 128 small, 256 medium, 512 large
+    # x_reduced = TimeDistributed(
+    #     Dense(4096, activation=activation), name="bottleneck_projection"
+    # )(x_flat)
     bottleneck_skip = TimeDistributed(Dense(512))(x_flat)
 
+    # 3. Add Speaker Embedding
+    # x_reduced: (None, 24, 256), speaker_embed: (None, 256)
     spk_repeated = RepeatVector(T_small)(speaker_embed)
     x_seq = Concatenate(axis=-1, name="bottleneck_concat")([x_flat, spk_repeated])
 
-    x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=3, prefix="main")
+    # 4. Apply GRU on the compressed dimension (hidden_dim=256 is plenty, medium, small-256, large, 1024)
+    x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main")
 
     x_seq = layers.Add()([x_seq, bottleneck_skip])
 
+    # 5. Project back up to the original flattened size (4096)
+    # x_expanded = TimeDistributed(
+    #     Dense(F_small * C_small, activation=activation), name="bottleneck_expansion"
+    # )(x_seq)
+
+    # 6. Reshape back to the 4D tensor (None, 24, 16, 256) for the Decoder
     x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
     x = Reshape((T_small, F_small, C_small))(x_expanded)
 
+    # Now proceed to FiLM and upsampling
     x = cross_attention_cond(x, speaker_embed)
 
     if not use_dropout_on_upsampling:
@@ -994,7 +1021,8 @@ def custom_unet(
     for conv in reversed(down_layers):
         filters //= 2  # decreasing number of filters with each layer
         dropout -= dropout_change_per_layer
-        x = upsample(filters, (3, 3), strides=(2, 2), padding="same")(x)
+        x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
+        # Apply FiLM conditioning after upsampling but before concatenation
         x = film(x, speaker_embed)
         if use_attention:
             x = attention_concat(conv_below=x, skip_connection=conv)
@@ -1002,14 +1030,8 @@ def custom_unet(
             x = concatenate([x, conv])
 
         x = cross_attention_cond(x, speaker_embed)
-        x = conv2d_block(
-            inputs=x,
-            filters=filters,
-            use_batch_norm=use_batch_norm,
-            dropout=dropout,
-            dropout_type=dropout_type,
-            activation=activation,
-        )
+
+        x=tf_alternating_block(x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_{filters}")
     # --- Split noisy input into real / imag ---
     input_r = main_input_copy[..., 0:1]
     input_i = main_input_copy[..., 1:2]
@@ -1049,14 +1071,12 @@ model_filename = (
 model = custom_unet(
     input_shape=(192, 256, 2),
     use_batch_norm=True,
-    num_classes=2,
-    filters=16,
+    filters=32,
     use_dropout_on_upsampling=False,
-    num_layers=5,
+    num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
     dropout=0.2,
-    output_activation="sigmoid",
 )
 callbacks = [
     ModelCheckpoint(
@@ -1126,7 +1146,7 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
 
 
 total_steps = steps_per_epoch * EPOCHS
-warmup_steps = steps_per_epoch * 30
+warmup_steps = steps_per_epoch * 10
 initial_lr = 1e-4
 alpha = 0.05  # final lr fraction
 
@@ -1190,8 +1210,7 @@ model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 history = model.fit(
     train_dataset,
     epochs=EPOCHS,
-    steps_per_epoch=steps_per_epoch,
-    validation_steps=validation_steps,
+    # steps_per_epoch=steps_per_epoch,
     validation_data=val_dataset,
     # validation_steps=validation_steps,
     callbacks=callbacks + [LrLogger()],
