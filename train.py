@@ -1296,13 +1296,6 @@ history = model.fit(
 )
 
 
-# Evaluate the model on test set
-# model.load_weights(
-#     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.weights.
-# )
-# model.trainable = False
-# print("Model loaded for inference")
-
 # load the keras model for inference
 model = tf.keras.models.load_model(
     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras",
