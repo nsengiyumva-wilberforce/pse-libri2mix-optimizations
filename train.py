@@ -1226,6 +1226,64 @@ def mrstft_loss_from_complex(y_true_spec, y_pred_spec):
 
     return mrstft_loss(wav_true, wav_pred)
 
+
+def si_sdr_loss(y_true_wav, y_pred_wav):
+    """Optimised SI‑SDR (negative SI‑SNR) for time‑domain signals."""
+    eps = 1e-8
+    # Remove DC offset per sample
+    y_true = y_true_wav - tf.reduce_mean(y_true_wav, axis=-1, keepdims=True)
+    y_pred = y_pred_wav - tf.reduce_mean(y_pred_wav, axis=-1, keepdims=True)
+    
+    dot = tf.reduce_sum(y_true * y_pred, axis=-1, keepdims=True)
+    norm = tf.reduce_sum(y_true ** 2, axis=-1, keepdims=True) + eps
+    target = (dot / norm) * y_true
+    noise = y_pred - target
+    
+    snr = tf.reduce_sum(target ** 2, axis=-1) / (tf.reduce_sum(noise ** 2, axis=-1) + eps)
+    si_snr = 10 * tf.math.log(snr + eps) / tf.math.log(10.0)
+    return -tf.reduce_mean(si_snr)   # minimise negative SI‑SNR
+
+def complex_to_waveform(complex_spec):
+    """
+    complex_spec: Tensor of shape (B, T, F, 2) where last dim is [real, imag]
+    Returns: waveform of shape (B, L)
+    """
+    real = complex_spec[..., 0]
+    imag = complex_spec[..., 1]
+    c = tf.complex(real, imag)
+    
+    frame_length = 400   # must match training STFT
+    frame_step = 160
+    fft_length = 510
+    
+    wav = tf.signal.inverse_stft(
+        c,
+        frame_length=frame_length,
+        frame_step=frame_step,
+        fft_length=fft_length
+    )
+    return wav
+
+
+def combined_loss(y_true_spec, y_pred_spec):
+    # Convert both to waveforms
+    wav_true = complex_to_waveform(y_true_spec)
+    wav_pred = complex_to_waveform(y_pred_spec)
+    
+    # Trim to same length (in case of rounding differences)
+    min_len = tf.minimum(tf.shape(wav_true)[-1], tf.shape(wav_pred)[-1])
+    wav_true = wav_true[..., :min_len]
+    wav_pred = wav_pred[..., :min_len]
+    
+    # SI‑SDR loss (primary)
+    si_loss = si_sdr_loss(wav_true, wav_pred)
+    
+    # Multi‑resolution STFT loss (auxiliary)
+    spec_loss = mrstft_loss(wav_true, wav_pred)
+    
+    # Weighting – you can tune the 0.1 factor
+    return si_loss + 0.1 * spec_loss
+
 total_steps = steps_per_epoch * EPOCHS
 warmup_steps = steps_per_epoch * 10
 initial_lr = 1e-4
@@ -1286,7 +1344,7 @@ optimizer = tf.keras.optimizers.Adam(
 
 model.summary()
 
-model.compile(optimizer=optimizer, loss=mrstft_loss_from_complex)
+model.compile(optimizer=optimizer, loss=combined_loss)
 
 history = model.fit(
     train_dataset,
