@@ -1310,7 +1310,8 @@ model = tf.keras.models.load_model(
         "sLSTMCell": sLSTMCell,
         "mLSTMCell": mLSTMCell,
         "WarmupCosineDecay": WarmupCosineDecay,
-        "complex_enhancement_loss_pc": complex_enhancement_loss_pc,
+        "mrstft_loss_from_complex": mrstft_loss_from_complex,
+        "MultiResolutionSTFTLoss": MultiResolutionSTFTLoss,
     }
 )
 model.trainable = False
