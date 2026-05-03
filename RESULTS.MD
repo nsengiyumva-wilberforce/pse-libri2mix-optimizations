@@ -1,137 +1,14 @@
-
-# Final Results
-
-## SI-SDR
-| Metric | Value |
-|--------|-------|
-| Mix | -0.03 |
-| Enhanced | 5.06 |
-| Improvement | 5.10 |
-
-## PESQ
-| Metric | Value |
-|--------|-------|
-| Mix | 1.603 |
-| Enhanced | 1.926 |
-| Improvement | 0.324 |
-
-## STOI
-| Metric | Value |
-|--------|-------|
-| Mix | 0.714 |
-| Enhanced | 0.756 |
-| Improvement | 0.042 |
-
-
-**Model:** Phase Reuse on 14M Model
-
-
-# PERFORMANCE ON COMPLEX MASKING MODEL WITH SI-SDR LOSS
-## SI-SDR
-| Metric | Value |
-|--------|-------|
-| Mix | -0.03 |
-| Enhanced | 3.70 |
-| Improvement | 3.73 |
-
-## PESQ
-| Metric | Value |
-|--------|-------|
-| Mix | 1.603 |
-| Enhanced | 1.796 |
-| Improvement | 0.194 |
-
-## STOI
-| Metric | Value |
-|--------|-------|
-| Mix | 0.714 |
-| Enhanced | 0.759 |
-| Improvement | 0.045 |
-
-
-**Model:** Phase Reuse on 14M Model
-
-# PERFORMANCE ON COMPLEX MASKING MODEL WITH SI-SDR LOSS
-## SI-SDR
-| Metric | Value |
-|--------|-------|
-| Mix | -0.03 |
-| Enhanced | 4.44 |
-| Improvement | 4.47 |
-
-## PESQ
-| Metric | Value |
-|--------|-------|
-| Mix | 1.603 |
-| Enhanced | 1.850 |
-| Improvement | 0.248 |
-
-## STOI
-| Metric | Value |
-|--------|-------|
-| Mix | 0.714 |
-| Enhanced | 0.768 |
-| Improvement | 0.054 |
-**Model:** Phase Reuse on 20M Model on 9 epochs
-
-
-# latest model on 9th epoch
 ========== FINAL RESULTS ==========
 SI-SDR (mix): -0.03
-SI-SDR (enh): 5.39
-SI-SDRi:      5.42
+SI-SDR (enh): 6.83
+SI-SDRi:      6.86
 PESQ (mix):   1.603
-PESQ (enh):   1.990
-PESQi:        0.387
+PESQ (enh):   2.165
+PESQi:        0.562
 STOI (mix):   0.714
-STOI (enh):   0.780
-STOIi:        0.066
+STOI (enh):   0.804
+STOIi:        0.090
 
-# on 24 epochs, it starts overfitting:
-========== FINAL RESULTS ==========
-SI-SDR (mix): -0.03
-SI-SDR (enh): 6.66
-SI-SDRi:      6.69
-PESQ (mix):   1.603
-PESQ (enh):   2.123
-PESQi:        0.520
-STOI (mix):   0.714
-STOI (enh):   0.801
-STOIi:        0.087
-
-# testing on librispeech axiliary on libri2mix dataset
-========== FINAL RESULTS ==========
-SI-SDR (mix): -0.03
-SI-SDR (enh): 6.91
-SI-SDRi:      6.94
-PESQ (mix):   1.603
-PESQ (enh):   2.141
-PESQi:        0.538
-STOI (mix):   0.714
-STOI (enh):   0.807
-STOIi:        0.093
-
-# on 25 epochs, it starts overfitting with augmentation:
-SI-SDR (mix): -0.03 
-SI-SDR (enh): 6.99 
-SI-SDRi: 7.02 
-PESQ (mix): 1.603 
-PESQ (enh): 2.158 
-PESQi: 0.555 
-STOI (mix): 0.714 
-STOI (enh): 0.810 
-STOIi: 0.096
-# on 54 epochs, it starts overfitting:
-========== FINAL RESULTS ==========
-SI-SDR (mix): -0.03
-SI-SDR (enh): 6.95
-SI-SDRi:      6.99
-PESQ (mix):   1.603
-PESQ (enh):   2.155
-PESQi:        0.553
-STOI (mix):   0.714
-STOI (enh):   0.807
-STOIi:        0.094
 
 
 

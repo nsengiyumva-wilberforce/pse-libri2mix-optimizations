@@ -1106,183 +1106,54 @@ callbacks = [
 ]
 
 
-class MultiResolutionSTFTLoss(tf.keras.losses.Loss):
-    def __init__(self,
-                 fft_sizes=[512, 256, 128],
-                 hop_sizes=[160, 80, 40],
-                 win_lengths=[400, 200, 100],
-                 window='hann_window',
-                 factor_sc=0.1,
-                 factor_mag=0.1,
-                 eps=1e-7):
-        super().__init__(name='MultiResolutionSTFTLoss')
-        self.fft_sizes = fft_sizes
-        self.hop_sizes = hop_sizes
-        self.win_lengths = win_lengths
-        self.factor_sc = factor_sc
-        self.factor_mag = factor_mag
-        self.eps = eps
+def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
+    # Split Real and Imaginary
+    # Shape expected: (Batch, Time, Freq, 2)
+    r_t, i_t = y_true[..., 0], y_true[..., 1]
+    r_p, i_p = y_pred[..., 0], y_pred[..., 1]
 
-        # Pre‑compute windows for each resolution (periodic Hann)
-        self.windows = []
-        for win_len in win_lengths:
-            window = tf.signal.hann_window(win_len, periodic=True)
-            self.windows.append(window)
+    # 1. Compressed Magnitude Loss
+    mag_t = tf.sqrt(r_t**2 + i_t**2 + eps)
+    mag_p = tf.sqrt(r_p**2 + i_p**2 + eps)
+    mag_loss = tf.reduce_mean(tf.abs(mag_t**gamma - mag_p**gamma))
 
-    def spectral_convergence_loss(self, y_mag, x_mag):
-        """
-        y_mag, x_mag: (B, T, F)
-        Returns scalar loss (mean over batch)
-        """
-        # Frobenius norm per sample: sqrt( sum over time & freq of squared values )
-        diff_sq = tf.reduce_sum((y_mag - x_mag) ** 2, axis=[1, 2])    # (B,)
-        y_norm_sq = tf.reduce_sum(y_mag ** 2, axis=[1, 2])            # (B,)
-
-        diff_norm = tf.sqrt(diff_sq + self.eps)                       # (B,)
-        y_norm = tf.sqrt(y_norm_sq)                                   # (B,)
-
-        # Avoid division by zero
-        loss_per_sample = diff_norm / (y_norm + self.eps)
-        return tf.reduce_mean(loss_per_sample)
-
-    def log_stft_magnitude_loss(self, y_mag, x_mag):
-        """
-        y_mag, x_mag: (B, T, F)
-        Returns scalar loss (mean over batch)
-        """
-        # L1 loss on log magnitudes (same as PyTorch version)
-        log_y = tf.math.log(y_mag + self.eps)
-        log_x = tf.math.log(x_mag + self.eps)
-        return tf.reduce_mean(tf.abs(log_y - log_x))
-
-    def call(self, y_true_wav, y_pred_wav):
-        """
-        y_true_wav, y_pred_wav: waveforms of shape (B, T)
-        """
-        sc_loss = 0.0
-        mag_loss = 0.0
-
-        for fft_size, hop_size, win_len, window in zip(self.fft_sizes,
-                                                         self.hop_sizes,
-                                                         self.win_lengths,
-                                                         self.windows):
-            # STFT for true and predicted
-            stft_true = tf.signal.stft(y_true_wav,
-                                       frame_length=win_len,
-                                       frame_step=hop_size,
-                                       fft_length=fft_size,
-                                       window_fn=lambda frame_len, dtype: window)
-            stft_pred = tf.signal.stft(y_pred_wav,
-                                       frame_length=win_len,
-                                       frame_step=hop_size,
-                                       fft_length=fft_size,
-                                       window_fn=lambda frame_len, dtype: window)
-
-            # Magnitude spectrograms: (B, T, F)
-            mag_true = tf.abs(stft_true)
-            mag_pred = tf.abs(stft_pred)
-
-            sc_loss += self.spectral_convergence_loss(mag_true, mag_pred)
-            mag_loss += self.log_stft_magnitude_loss(mag_true, mag_pred)
-
-        sc_loss /= len(self.fft_sizes)
-        mag_loss /= len(self.fft_sizes)
-
-        return self.factor_sc * sc_loss + self.factor_mag * mag_loss
+    # 2. Compressed Complex Loss (Handles Phase implicitly and stably)
+    # This transforms the complex values into the compressed domain
+    # Formula: (r + ji) / |mag| * |mag|^gamma = (r + ji) * |mag|^(gamma-1)
+    factor_t = mag_t**(gamma - 1)
+    factor_p = mag_p**(gamma - 1)
     
-mrstft_loss = MultiResolutionSTFTLoss(
-    fft_sizes=[512, 256, 128],
-    hop_sizes=[160, 80, 40],
-    win_lengths=[400, 200, 100],
-    factor_sc=0.1,
-    factor_mag=0.1
-)
+    c_real_t, c_imag_t = r_t * factor_t, i_t * factor_t
+    c_real_p, c_imag_p = r_p * factor_p, i_p * factor_p
     
-def mrstft_loss_from_complex(y_true_spec, y_pred_spec):
-    # Split real/imag
-    r_true, i_true = y_true_spec[..., 0], y_true_spec[..., 1]
-    r_pred, i_pred = y_pred_spec[..., 0], y_pred_spec[..., 1]
-    c_true = tf.complex(r_true, i_true)
-    c_pred = tf.complex(r_pred, i_pred)
+    complex_loss = tf.reduce_mean(tf.abs(c_real_t - c_real_p) + tf.abs(c_imag_t - c_imag_p))
 
-    # Inverse STFT (use same parameters as in your data pipeline)
-    frame_length = 400
-    frame_step = 160
-    fft_length = 510
+    # 3. Temporal Consistency (Delta Loss)
+    # Using the compressed magnitude for delta often yields better PESQ
+    delta_mag_t = mag_t[:, 1:, :] - mag_t[:, :-1, :]
+    delta_mag_p = mag_p[:, 1:, :] - mag_p[:, :-1, :]
+    consistency_loss = tf.reduce_mean(tf.square(delta_mag_t - delta_mag_p))
 
-    wav_true = tf.signal.inverse_stft(c_true,
-                                      frame_length=frame_length,
-                                      frame_step=frame_step,
-                                      fft_length=fft_length)
-    wav_pred = tf.signal.inverse_stft(c_pred,
-                                      frame_length=frame_length,
-                                      frame_step=frame_step,
-                                      fft_length=fft_length)
-
-    # Trim to same length (in case of off-by-one)
-    min_len = tf.minimum(tf.shape(wav_true)[-1], tf.shape(wav_pred)[-1])
-    wav_true = wav_true[..., :min_len]
-    wav_pred = wav_pred[..., :min_len]
-
-    return mrstft_loss(wav_true, wav_pred)
-
-
-def si_sdr_loss(y_true_wav, y_pred_wav):
-    """Optimised SI‑SDR (negative SI‑SNR) for time‑domain signals."""
-    eps = 1e-8
-    # Remove DC offset per sample
-    y_true = y_true_wav - tf.reduce_mean(y_true_wav, axis=-1, keepdims=True)
-    y_pred = y_pred_wav - tf.reduce_mean(y_pred_wav, axis=-1, keepdims=True)
+    # 4. Scale-Invariant Signal-to-Noise Ratio (SI-SNR) 
+    # Much more stable than a custom SI-L1 loss
+    t_flat = tf.reshape(y_true, [tf.shape(y_true)[0], -1])
+    p_flat = tf.reshape(y_pred, [tf.shape(y_pred)[0], -1])
     
-    dot = tf.reduce_sum(y_true * y_pred, axis=-1, keepdims=True)
-    norm = tf.reduce_sum(y_true ** 2, axis=-1, keepdims=True) + eps
-    target = (dot / norm) * y_true
-    noise = y_pred - target
+    dot = tf.reduce_sum(t_flat * p_flat, axis=1, keepdims=True)
+    snr_norm = tf.reduce_sum(t_flat**2, axis=1, keepdims=True) + eps
+    target_proj = (dot / snr_norm) * t_flat
     
-    snr = tf.reduce_sum(target ** 2, axis=-1) / (tf.reduce_sum(noise ** 2, axis=-1) + eps)
-    si_snr = 10 * tf.math.log(snr + eps) / tf.math.log(10.0)
-    return -tf.reduce_mean(si_snr)   # minimise negative SI‑SNR
+    noise_res = p_flat - target_proj
+    si_snr = 10 * tf.math.log(tf.reduce_sum(target_proj**2, axis=1) / 
+                             (tf.reduce_sum(noise_res**2, axis=1) + eps) + eps) / tf.math.log(10.0)
+    
+    si_loss = -tf.reduce_mean(si_snr) # Negative because we want to maximize SNR
 
-def complex_to_waveform(complex_spec):
-    """
-    complex_spec: Tensor of shape (B, T, F, 2) where last dim is [real, imag]
-    Returns: waveform of shape (B, L)
-    """
-    real = complex_spec[..., 0]
-    imag = complex_spec[..., 1]
-    c = tf.complex(real, imag)
-    
-    frame_length = 400   # must match training STFT
-    frame_step = 160
-    fft_length = 510
-    
-    wav = tf.signal.inverse_stft(
-        c,
-        frame_length=frame_length,
-        frame_step=frame_step,
-        fft_length=fft_length
-    )
-    return wav
+    return (1.0 * mag_loss + 
+            1.0 * complex_loss + 
+            0.5 * consistency_loss + 
+            2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
 
-
-def combined_loss(y_true_spec, y_pred_spec):
-    # Convert both to waveforms
-    wav_true = complex_to_waveform(y_true_spec)
-    wav_pred = complex_to_waveform(y_pred_spec)
-    
-    # Trim to same length (in case of rounding differences)
-    min_len = tf.minimum(tf.shape(wav_true)[-1], tf.shape(wav_pred)[-1])
-    wav_true = wav_true[..., :min_len]
-    wav_pred = wav_pred[..., :min_len]
-    
-    # SI‑SDR loss (primary)
-    si_loss = si_sdr_loss(wav_true, wav_pred)
-    
-    # Multi‑resolution STFT loss (auxiliary)
-    spec_loss = mrstft_loss(wav_true, wav_pred)
-    
-    # Weighting – you can tune the 0.1 factor
-    return si_loss + 0.1 * spec_loss
 
 total_steps = steps_per_epoch * EPOCHS
 warmup_steps = steps_per_epoch * 10
@@ -1344,15 +1215,24 @@ optimizer = tf.keras.optimizers.Adam(
 
 model.summary()
 
-model.compile(optimizer=optimizer, loss=combined_loss)
+model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
 history = model.fit(
     train_dataset,
     epochs=EPOCHS,
+    # steps_per_epoch=steps_per_epoch,
     validation_data=val_dataset,
-    callbacks=callbacks + [LrLogger()],
+    # validation_steps=validation_steps,
+    callbacks=callbacks
 )
 
+
+# Evaluate the model on test set
+# model.load_weights(
+#     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.weights.
+# )
+# model.trainable = False
+# print("Model loaded for inference")
 
 # load the keras model for inference
 model = tf.keras.models.load_model(
@@ -1361,8 +1241,7 @@ model = tf.keras.models.load_model(
         "sLSTMCell": sLSTMCell,
         "mLSTMCell": mLSTMCell,
         "WarmupCosineDecay": WarmupCosineDecay,
-        "mrstft_loss_from_complex": mrstft_loss_from_complex,
-        "MultiResolutionSTFTLoss": MultiResolutionSTFTLoss,
+        "complex_enhancement_loss_pc": complex_enhancement_loss_pc,
     }
 )
 model.trainable = False
