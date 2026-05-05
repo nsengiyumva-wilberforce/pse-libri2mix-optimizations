@@ -895,15 +895,99 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
     x = Activation(activation)(x)
 
     return x
+def broadcast_speaker(embed, target_tensor):
+        target_shape = target_tensor.shape # (Batch, T, F, C)
+        s = layers.Dense(target_shape[-1])(embed)
+        s = layers.Reshape((1, 1, target_shape[-1]))(s)
+        # Tile/Broadcast to (T, F, C)
+        return layers.UpSampling2D(size=(target_shape[1], target_shape[2]))(s)
 
-def plot_spectrogram(spectrogram, ax):
-    log_spec = np.log(spectrogram.T + np.finfo(float).eps)
-    height = log_spec.shape[0]
-    width = log_spec.shape[1]
-    X = np.linspace(0, np.size(spectrogram), num=width, dtype=int)
-    Y = range(height)
-    ax.pcolormesh(X, Y, log_spec)
+def lca_block(x, channels, r=4, name="lca"):
+    inter_channels = int(channels // r)
+    
+    # Local Attention
+    xl = layers.Conv2D(inter_channels, 1, padding="same", name=f"{name}_l1")(x)
+    xl = layers.BatchNormalization()(xl)
+    xl = layers.Activation("relu")(xl)
+    xl = layers.Conv2D(channels, 1, padding="same", name=f"{name}_l2")(xl)
+    xl = layers.BatchNormalization()(xl)
+    
+    # Global Attention
+    xg = layers.GlobalAveragePooling2D(keepdims=True)(x)
+    xg = layers.Conv2D(inter_channels, 1, padding="same", name=f"{name}_g1")(xg)
+    xg = layers.BatchNormalization()(xg)
+    xg = layers.Activation("relu")(xg)
+    xg = layers.Conv2D(channels, 1, padding="same", name=f"{name}_g2")(xg)
+    xg = layers.BatchNormalization()(xg)
+    
+    # Combine
+    xlg = layers.Add()([xl, xg])
+    wei = layers.Activation("sigmoid")(xlg)
+    return layers.Multiply()([x, wei])
 
+def ifi_block(x, residual, channels, r=4, name="ifi"):
+    # First Interaction
+    xa = layers.Add()([x, residual])
+    # LCA logic inside IFI
+    xl = layers.Conv2D(channels // r, 1, padding="same")(xa)
+    xl = layers.BatchNormalization()(xl)
+    xl = layers.Activation("relu")(xl)
+    xl = layers.Conv2D(channels, 1, padding="same")(xl)
+    xl = layers.BatchNormalization()(xl)
+    
+    xg = layers.GlobalAveragePooling2D(keepdims=True)(xa)
+    xg = layers.Conv2D(channels // r, 1, padding="same")(xg)
+    xg = layers.BatchNormalization()(xg)
+    xg = layers.Activation("relu")(xg)
+    xg = layers.Conv2D(channels, 1, padding="same")(xg)
+    xg = layers.BatchNormalization()(xg)
+    
+    wei = layers.Activation("sigmoid")(layers.Add()([xl, xg]))
+    # Soft gating: xi = x * wei + residual * (1 - wei)
+    xi = layers.Add()([
+        layers.Multiply()([x, wei]),
+        layers.Multiply()([residual, layers.Lambda(lambda x: 1.0 - x)(wei)])
+    ])
+    
+    # Second Interaction (Iterative)
+    xl2 = layers.Conv2D(channels // r, 1, padding="same")(xi)
+    xl2 = layers.BatchNormalization()(xl2)
+    xl2 = layers.Activation("relu")(xl2)
+    xl2 = layers.Conv2D(channels, 1, padding="same")(xl2)
+    xl2 = layers.BatchNormalization()(xl2)
+    
+    xg2 = layers.GlobalAveragePooling2D(keepdims=True)(xi)
+    xg2 = layers.Conv2D(channels // r, 1, padding="same")(xg2)
+    xg2 = layers.BatchNormalization()(xg2)
+    xg2 = layers.Activation("relu")(xg2)
+    xg2 = layers.Conv2D(channels, 1, padding="same")(xg2)
+    xg2 = layers.BatchNormalization()(xg2)
+    
+    wei2 = layers.Activation("sigmoid")(layers.Add()([xl2, xg2]))
+    # Final Output
+    return layers.Add(name=name)([
+        layers.Multiply()([x, wei2]),
+        layers.Multiply()([residual, layers.Lambda(lambda x: 1.0 - x)(wei2)])
+    ])
+
+def attentive_pooling(x, name="att_pool"):
+    """
+    Self-attention pooling (Attentive Statistics Pooling lite).
+    Input shape: (Batch, Time, Channels)
+    Output shape: (Batch, Channels)
+    """
+    att_weights = layers.Dense(1, activation=None, name=f"{name}_dense")(x)
+    
+
+    att_weights = layers.Softmax(axis=1, name=f"{name}_softmax")(att_weights)
+    
+
+    context = layers.Lambda(
+        lambda inputs: ops.sum(inputs[0] * inputs[1], axis=1),
+        name=f"{name}_weighted_sum"
+    )([x, att_weights])
+    
+    return context
 
 def custom_unet(
     input_shape,
@@ -935,14 +1019,6 @@ def custom_unet(
 
     down_layers = []
     for l in range(num_layers):
-        # x = conv2d_block(
-        #     x,
-        #     filters=filters,
-        #     use_batch_norm=use_batch_norm,
-        #     dropout=dropout,
-        #     dropout_type=dropout_type,
-        #     activation=activation,
-        # )
         x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
@@ -981,41 +1057,50 @@ def custom_unet(
     #     ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
     # )
     ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
-    speaker_embed = GlobalAveragePooling1D()(ref_seq)
+    
+    # NEW: Attentive Pooling
+    speaker_embed = attentive_pooling(ref_seq, name="speaker_att_pool")
+    
+    # Optional: A final projection to stabilize the embedding
+    speaker_embed = layers.Dense(256, activation="tanh", name="speaker_final_proj")(speaker_embed)
 
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
 
     # 1. Flatten the spatial (F_small) and channel (C_small) dimensions
     # Current x: (None, 24, 16, 256) -> Reshape to: (None, 24, 4096)
-    x_flat = Reshape((T_small, F_small * C_small), name="bottleneck_flatten")(x)
+ # --- 1. Dimensionality Reduction (The "Compression") ---
+    # Instead of Reshape(4096), we reduce the depth (channels) to make it manageable
+    bottleneck_dim = 128 # Much more efficient than 512 or 4096
+    x_compressed = Conv2D(bottleneck_dim, (1, 1), padding="same", name="bn_depth_reduce")(x)
 
-    # 2. Project 4096 down to 256 (This is where you save millions of parameters!) 128 small, 256 medium, 512 large
-    # x_reduced = TimeDistributed(
-    #     Dense(4096, activation=activation), name="bottleneck_projection"
-    # )(x_flat)
-    bottleneck_skip = TimeDistributed(Dense(512))(x_flat)
+    # --- 2. Temporal Processing Preparation ---
+    # Reshape to (Time, Frequency * Compressed_Channels) 
+    # Shape: (24, 16 * 128) = (24, 2048) -> Still high, but much better
+    x_seq = Reshape((T_small, F_small * bottleneck_dim))(x_compressed)
 
-    # 3. Add Speaker Embedding
-    # x_reduced: (None, 24, 256), speaker_embed: (None, 256)
-    spk_repeated = RepeatVector(T_small)(speaker_embed)
-    x_seq = Concatenate(axis=-1, name="bottleneck_concat")([x_flat, spk_repeated])
+    # --- 3. Speaker Injection (Residual Style) ---
+    # Project speaker embed to match the seq dimension
+    spk_proj = Dense(F_small * bottleneck_dim)(speaker_embed) # (None, 2048)
+    spk_proj = RepeatVector(T_small)(spk_proj)               # (None, 24, 2048)
 
-    # 4. Apply GRU on the compressed dimension (hidden_dim=256 is plenty, medium, small-256, large, 1024)
-    x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main")
+    # Add is often more stable than Concat for large feature vectors
+    x_seq = layers.Add(name="bn_spk_fusion")([x_seq, spk_proj])
 
-    x_seq = layers.Add()([x_seq, bottleneck_skip])
+    # --- 4. The xLSTM Core ---
+    # Process the sequence with the xLSTM
+    x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main_bottleneck")
 
-    # 5. Project back up to the original flattened size (4096)
-    # x_expanded = TimeDistributed(
-    #     Dense(F_small * C_small, activation=activation), name="bottleneck_expansion"
-    # )(x_seq)
+    # --- 5. Expansion & Reconstruction ---
+    # Map back to the compressed spatial shape
+    x_expanded = TimeDistributed(Dense(F_small * bottleneck_dim))(x_seq)
+    x_reshaped = Reshape((T_small, F_small, bottleneck_dim))(x_expanded)
 
-    # 6. Reshape back to the 4D tensor (None, 24, 16, 256) for the Decoder
-    x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
-    x = Reshape((T_small, F_small, C_small))(x_expanded)
+    # Restore original channel depth (C_small = 256)
+    x = Conv2D(C_small, (1, 1), padding="same", activation=activation, name="bn_reconstruct")(x_reshaped)
 
     # Now proceed to FiLM and upsampling
-    x = cross_attention_cond(x, speaker_embed)
+    spk_res = broadcast_speaker(speaker_embed, x)
+    x = ifi_block(x, spk_res, channels=x.shape[-1], name="bn_ifi")
 
     if not use_dropout_on_upsampling:
         dropout = 0.0
@@ -1031,7 +1116,9 @@ def custom_unet(
         else:
             x = concatenate([x, conv])
 
-        x = cross_attention_cond(x, speaker_embed)
+        spk_res_up = broadcast_speaker(speaker_embed, x)
+        x = ifi_block(x, spk_res_up, channels=x.shape[-1], name=f"up_ifi_{filters}")
+
         x = conv2d_block(
             inputs=x,
             filters=filters,
@@ -1040,6 +1127,7 @@ def custom_unet(
             dropout_type=dropout_type,
             activation=activation,
         )
+    x = lca_block(x, channels=x.shape[-1], name="final_refinement")
     # --- Split noisy input into real / imag ---
     input_r = main_input_copy[..., 0:1]
     input_i = main_input_copy[..., 1:2]
@@ -1223,7 +1311,7 @@ history = model.fit(
     # steps_per_epoch=steps_per_epoch,
     validation_data=val_dataset,
     # validation_steps=validation_steps,
-    callbacks=callbacks
+    callbacks=callbacks + [LrLogger()],
 )
 
 
