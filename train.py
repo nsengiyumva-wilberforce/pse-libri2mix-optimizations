@@ -853,24 +853,45 @@ def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
     return x + attn_map
     
 def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
-    # ---- Frequency branch (1 x 3) ----
+    orginal_x = x
+    # ---- Frequency branch (1 x 3) for the first branch, we get time convolutions over frequency
     f_branch = Conv2D(filters, (1, 3), padding="same",
                       kernel_initializer="he_normal",
                       name=f"{name_prefix}_fconv")(x)
     if use_bn:
-        f_branch = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
-    f_branch = Activation(activation)(f_branch)
+        x = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
+    x = Activation(activation)(x)
 
     # ---- Time branch (3 x 1) ----
     t_branch = Conv2D(filters, (3, 1), padding="same",
                       kernel_initializer="he_normal",
                       name=f"{name_prefix}_tconv")(x)
     if use_bn:
-        t_branch = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
-    t_branch = Activation(activation)(t_branch)
+        x = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
+    x = Activation(activation)(x)
 
     # ---- Merge ----
     x = Concatenate(name=f"{name_prefix}_concat")([f_branch, t_branch])
+
+    # sencond branch, we get frequency convolutions over time
+    t_branch_2 = Conv2D(filters, (3, 1), padding="same",
+                        kernel_initializer="he_normal",
+                        name=f"{name_prefix}_tconv2")(orginal_x)
+    if use_bn:
+        orginal_x = BatchNormalization(name=f"{name_prefix}_tbn2")(t_branch_2)
+    orginal_x = Activation(activation)(t_branch_2)
+
+    f_branch_2 = Conv2D(filters, (1, 3), padding="same",
+                        kernel_initializer="he_normal",
+                        name=f"{name_prefix}_fconv2")(orginal_x)
+    if use_bn:
+        orginal_x = BatchNormalization(name=f"{name_prefix}_fbn2")(f_branch_2)
+    orginal_x = Activation(activation)(f_branch_2)
+
+    # Merge again
+    x = Concatenate(name=f"{name_prefix}_concat2")([t_branch_2, f_branch_2])
+    # merge the two branches  for x and original_x
+    x = Concatenate(name=f"{name_prefix}_final_concat")([x, orginal_x])
 
     # ---- Separable TF mixing ----
     x = DepthwiseConv2D((3,3), padding="same",
@@ -1028,7 +1049,8 @@ def custom_unet(
     ref_enc = ref_x
     filters_ref = filters // (2**num_layers)
     for l in range(num_layers):
-        # first look at the frequency bins by applying a 1x3 convolution
+        original_ref_enc = ref_enc
+        # first branch to obtain time using frequency
         ref_enc_f = TimeDistributed(
             Conv2D(filters_ref, (1, 3), activation=activation, padding="same")
         )(ref_enc)
@@ -1042,6 +1064,30 @@ def custom_unet(
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc__t)
         # concatenate them
         ref_enc = Concatenate()([ref_enc_f, ref_enc__t])
+
+
+        # second branch to obtain frequency using time
+
+        ref_enc_t_1 = TimeDistributed(
+            Conv2D(filters_ref, (3, 1), activation=activation, padding="same")
+        )(original_ref_enc)
+
+        if use_batch_norm:
+            original_ref_enc = TimeDistributed(BatchNormalization())(ref_enc_t_1)
+
+        ref_enc_f_1 = TimeDistributed(
+            Conv2D(filters_ref, (1, 3), activation=activation, padding="same")
+        )(original_ref_enc)
+
+        if use_batch_norm:
+            original_ref_enc = TimeDistributed(BatchNormalization())(ref_enc_f_1)
+
+        # concatenate them second branch
+        ref_enc_branch2 = Concatenate()([ref_enc_t_1, ref_enc_f_1])
+
+        # now concatenate both branches to get a richer representation that captures both time and frequency interactions
+        ref_enc = Concatenate()([ref_enc, ref_enc_branch2])
+
         # then look at both time and frequency with a 3x3 convolution
         ref_enc = TimeDistributed(
             Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
@@ -1127,6 +1173,7 @@ def custom_unet(
             dropout_type=dropout_type,
             activation=activation,
         )
+        # x = tf_alternating_block(x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}")
     x = lca_block(x, channels=x.shape[-1], name="final_refinement")
     # --- Split noisy input into real / imag ---
     input_r = main_input_copy[..., 0:1]
