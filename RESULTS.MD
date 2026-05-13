@@ -1,13 +1,13 @@
 ========== FINAL RESULTS ==========
 SI-SDR (mix): -0.03
-SI-SDR (enh): 6.83
-SI-SDRi:      6.86
+SI-SDR (enh): 7.15
+SI-SDRi:      7.18
 PESQ (mix):   1.603
-PESQ (enh):   2.165
-PESQi:        0.562
+PESQ (enh):   2.195
+PESQi:        0.593
 STOI (mix):   0.714
-STOI (enh):   0.804
-STOIi:        0.090
+STOI (enh):   0.812
+STOIi:        0.098
 
 
 

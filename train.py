@@ -32,6 +32,14 @@ import keras
 from keras import ops
 from keras.models import Sequential
 import tensorflow_io as tfio
+from libri2mix import AudioToolkit, LibriSpeechDatasetBuilder, WaveformEnhancer
+from libri2mix.metrics import (
+    load_resample_8k as _load_resample_8k,
+    normalize as _normalize,
+    pesq_score as _pesq_score,
+    sanitize as _sanitize,
+    stoi_score as _stoi_score,
+)
 from collections import defaultdict
 import warnings
 from glob import glob
@@ -82,57 +90,7 @@ tf.config.optimizer.set_jit(True)
 #--------------------------------
 # HELPERS FOR DATA LOADING
 def load_scp(mix_path, ref_path, tgt_path):
-    """
-    Loads three SCP files and returns three aligned lists:
-    (mix, ref, tgt)
-    Each SCP file must have format:
-        <utt_id> <filepath>
-    """
-
-    def get_dict(path):
-        d = {}
-        with open(path, "r") as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) < 2:
-                    continue
-                key = parts[0]
-                value = parts[1]
-                if not os.path.isabs(value):
-                    value = os.path.abspath(value)
-                d[key] = value
-        return d
-
-    # ---- Load all SCPs ----
-    mix_d = get_dict(mix_path)
-    ref_d = get_dict(ref_path)
-    tgt_d = get_dict(tgt_path)
-    # ---- Debug counts ----
-    print("\n=== SCP LOAD DEBUG ===")
-    print(f"Mix entries: {len(mix_d)}")
-    print(f"Ref entries: {len(ref_d)}")
-    print(f"Tgt entries: {len(tgt_d)}")
-    # ---- Align keys ----
-    common_keys = sorted(set(mix_d) & set(ref_d) & set(tgt_d))
-    if len(common_keys) == 0:
-        raise ValueError(
-            "No overlapping keys found between SCP files.\n"
-            "Check that all SCPs use identical utterance IDs."
-        )
-    print(f"Aligned samples: {len(common_keys)}")
-    # ---- Build aligned lists ----
-    mix_list = [mix_d[k] for k in common_keys]
-    ref_list = [ref_d[k] for k in common_keys]
-    tgt_list = [tgt_d[k] for k in common_keys]
-    # ---- Sanity check (first sample) ----
-    print("\n=== SAMPLE CHECK ===")
-    print("Mix:", mix_list[0])
-    print("Ref:", ref_list[0])
-    print("Tgt:", tgt_list[0])
-    # ---- Critical warning ----
-    if ref_list[0] == tgt_list[0]:
-        print("\n[WARNING] REF == TARGET → conditioning will collapse!")
-    return mix_list, ref_list, tgt_list
+    return _DATASET_BUILDER.load_scp(mix_path, ref_path, tgt_path)
 
 
 # -------------------------------------------------------
@@ -147,7 +105,7 @@ def load_from_folder(data_root, split):
     mix_path = os.path.join(base, "mix_clean.scp")
     ref_path = os.path.join(base, "auxs1.scp")  # enrollment
     tgt_path = os.path.join(base, "ref.scp")  # clean target
-    return load_scp(mix_path, ref_path, tgt_path)
+    return _DATASET_BUILDER.load_scp(mix_path, ref_path, tgt_path)
 
 
 sr = 8000
@@ -161,6 +119,24 @@ EPOCHS = 300
 CHUNK_SIZE = 31000 # chunk into 4s
 STRIDE = CHUNK_SIZE // 2  # 50% overlap
 TARGET_SR = 8000
+_AUDIO_TOOLKIT = AudioToolkit(
+    target_sr=TARGET_SR,
+    frame_length=frame_length,
+    frame_step=frame_step,
+    n_fft=n_fft,
+)
+_DATASET_BUILDER = LibriSpeechDatasetBuilder(
+    audio_toolkit=_AUDIO_TOOLKIT,
+    chunk_size=CHUNK_SIZE,
+    stride=STRIDE,
+)
+_WAVEFORM_ENHANCER = WaveformEnhancer(
+    audio_toolkit=_AUDIO_TOOLKIT,
+    chunk_size=CHUNK_SIZE,
+    frame_length=frame_length,
+    frame_step=frame_step,
+    n_fft=n_fft,
+)
 TRAIN_MIX, TRAIN_REF, TRAIN_TGT = load_scp(
     "data/train/mix_clean.scp",
     "data/train/auxs1.scp",  # enrollment
@@ -180,73 +156,31 @@ TARGET_SR = 8000
 
 
 def load_audio_py(path):
-    # handle all possible types safely
-    if isinstance(path, bytes):
-        path = path.decode("utf-8")
-    elif isinstance(path, np.ndarray):
-        path = (
-            path.item().decode("utf-8") if path.dtype.type is np.bytes_ else path.item()
-        )
-    audio, sr = sf.read(path)
-    audio = audio.astype("float32")
-    if audio.ndim > 1:
-        audio = np.mean(audio, axis=1)
-    if sr != TARGET_SR:
-        audio = librosa.resample(audio, orig_sr=sr, target_sr=TARGET_SR)
-    return audio
+    return _AUDIO_TOOLKIT.load_audio_py(path)
 
 
 def load_audio_tf(path):
-    audio = tf.numpy_function(load_audio_py, [path], tf.float32)
-    audio.set_shape([None])  # important for TF graph
-    return audio
+    return _AUDIO_TOOLKIT.load_audio_tf(path)
 
 
 @tf.function
 def preprocess_tf(filepath):
-    wav = load_audio_tf(filepath)
-    # normalize
-    wav = wav / (tf.reduce_max(tf.abs(wav)) + 1e-8)
-    return wav
+    return _AUDIO_TOOLKIT.preprocess_tf(filepath)
 
 
 @tf.function
 def split_into_chunks(wav, chunk_size, stride):
-    length = tf.shape(wav)[0]
-
-    # pad RIGHT if too short
-    def pad():
-        pad_len = chunk_size - length
-        return tf.pad(wav, [[0, pad_len]])
-
-    wav = tf.cond(length < chunk_size, pad, lambda: wav)
-    length = tf.shape(wav)[0]
-    starts = tf.range(0, length - chunk_size + 1, stride)
-
-    def get_chunk(s):
-        return wav[s : s + chunk_size]
-
-    chunks = tf.map_fn(get_chunk, starts, fn_output_signature=tf.float32)
-    return chunks  # (num_chunks, chunk_size)
+    return _AUDIO_TOOLKIT.split_into_chunks(wav, chunk_size, stride)
 
 
 @tf.function
 def tf_rms(x, eps=1e-8):
-    return tf.sqrt(tf.reduce_mean(tf.square(x)) + eps)
+    return _AUDIO_TOOLKIT.tf_rms(x, eps)
 
 
 @tf.function
 def convert_to_spectrogram(wav_corr, wav_ref, wavclean):
-    spectrogram_corr = tf.signal.stft(
-        wav_corr, frame_length=frame_length, fft_length=n_fft, frame_step=frame_step
-    )
-    spectrogram_ref = tf.signal.stft(
-        wav_ref, frame_length=frame_length, fft_length=n_fft, frame_step=frame_step
-    )
-    spectrogram = tf.signal.stft(
-        wavclean, frame_length=frame_length, fft_length=n_fft, frame_step=frame_step
-    )
-    return spectrogram_corr, spectrogram_ref, spectrogram
+    return _AUDIO_TOOLKIT.convert_to_spectrogram(wav_corr, wav_ref, wavclean)
 
 
 @tf.function
@@ -302,86 +236,28 @@ def expand_dims(spectrogram_corr, spectrogram):
 
 
 def complex_to_2ch(spec):
-    return tf.stack([tf.math.real(spec), tf.math.imag(spec)], axis=-1)
+    return _AUDIO_TOOLKIT.complex_to_2ch(spec)
 
 
 @tf.function
 def sample_reference_segments(wav, K, segment_len):
-    wav_len = tf.shape(wav)[0]
-
-    # If too short: pad
-    def pad():
-        pad_len = segment_len - wav_len
-        wav_pad = tf.pad(wav, [[0, pad_len]])
-        return tf.tile(tf.expand_dims(wav_pad, 0), [K, 1])
-
-    # If long enough: sample
-    def sample():
-        max_start = wav_len - segment_len
-        starts = tf.random.uniform([K], 0, max_start + 1, dtype=tf.int32)
-        return tf.map_fn(
-            lambda s: wav[s : s + segment_len], starts, fn_output_signature=tf.float32
-        )
-
-    return tf.cond(wav_len < segment_len, pad, sample)
+    return _AUDIO_TOOLKIT.sample_reference_segments(wav, K, segment_len)
 
 
 def load_libri_speech_triplet_multiview(
     mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2
 ):
-    clean = preprocess_tf(tgt_path)
-    noisy = preprocess_tf(mix_path)
-    ref = preprocess_tf(ref_path)
-    mix_chunks = split_into_chunks(noisy, CHUNK_SIZE, STRIDE)
-    clean_chunks = split_into_chunks(clean, CHUNK_SIZE, STRIDE)
-    ref_segments = sample_reference_segments(ref, K, ref_len)
-    return mix_chunks, ref_segments, clean_chunks
+    return _DATASET_BUILDER.load_libri_speech_triplet_multiview(
+        mix_path, ref_path, tgt_path, K=K, ref_len=ref_len
+    )
 
 
 def configure_libri_speech_dataset(
     mixture_files, reference_files, target_files, is_train=True, K=4
 ):
-    ds = tf.data.Dataset.from_tensor_slices(
-        (mixture_files, reference_files, target_files)
+    return _DATASET_BUILDER.configure_dataset(
+        mixture_files, reference_files, target_files, is_train=is_train, K=K
     )
-
-    # 1. Load + chunk
-    ds = ds.map(
-        lambda n, r, t: load_libri_speech_triplet_multiview(n, r, t, K),
-        num_parallel_calls=tf.data.AUTOTUNE,
-    )
-
-    # 2. Flatten chunks (parallelized)
-    ds = ds.interleave(
-        lambda mix_chunks, ref_segments, clean_chunks:
-            tf.data.Dataset.from_tensor_slices((mix_chunks, clean_chunks))
-            .map(lambda m, c: (m, ref_segments, c)),
-        num_parallel_calls=tf.data.AUTOTUNE,
-    )
-
-    # 3. Shuffle AFTER chunking
-    if is_train:
-        ds = ds.shuffle(10000)
-
-    # 4. STFT
-    ds = ds.map(
-        lambda mix, ref, clean: convert_to_spectrogram_multiview(mix, ref, clean),
-        num_parallel_calls=tf.data.AUTOTUNE,
-    )
-
-    # 5. Convert to 2-channel
-    ds = ds.map(
-        lambda spec_noisy, spec_refs, spec_clean: (
-            {
-                "noisy_main": complex_to_2ch(spec_noisy),
-                "noisy_ref": complex_to_2ch(spec_refs),
-            },
-            complex_to_2ch(spec_clean),
-        ),
-        num_parallel_calls=tf.data.AUTOTUNE,
-    )
-
-    return ds.prefetch(tf.data.AUTOTUNE)
 
 
 train_ds = configure_libri_speech_dataset(
@@ -661,6 +537,30 @@ class mLSTMCell(Layer):
             tf.zeros((batch_size, self.units), dtype=dtype or tf.float32),  # n
             tf.zeros((batch_size, self.units), dtype=dtype or tf.float32),  # m
         ]
+
+@tf.keras.utils.register_keras_serializable()
+class LearnableScale(layers.Layer):
+    def __init__(self, initial_value=2.0, **kwargs):
+        super().__init__(**kwargs)
+        self.initial_value = initial_value
+        self.scale = self.add_weight(
+            name="scale_factor",
+            shape=(),
+            initializer=tf.keras.initializers.Constant(initial_value),
+            trainable=True,
+            constraint=tf.keras.constraints.NonNeg()
+        )
+
+    def call(self, x):
+        # We add 1e-6 to ensure the multiplier is never exactly 0
+        return (self.scale + 1e-6) * ops.tanh(x)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"initial_value": self.initial_value})
+        return config
+
+
 
 
 def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="xlstm"):
@@ -1132,6 +1032,8 @@ def custom_unet(
     # Add is often more stable than Concat for large feature vectors
     x_seq = layers.Add(name="bn_spk_fusion")([x_seq, spk_proj])
 
+    x_seq = layers.LayerNormalization(name="bn_spk_norm")(x_seq)
+
     # --- 4. The xLSTM Core ---
     # Process the sequence with the xLSTM
     x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main_bottleneck")
@@ -1179,13 +1081,14 @@ def custom_unet(
     input_r = main_input_copy[..., 0:1]
     input_i = main_input_copy[..., 1:2]
 
-    # --- Predict complex mask (no activation) ---
-    mask_r = Conv2D(1, (1, 1), activation=None, name="mask_real")(x)
-    mask_i = Conv2D(1, (1, 1), activation=None, name="mask_imag")(x)
+    # --- Predict complex mask ---
+    # Kernel init "zeros" helps stability at start of training
+    mask_r = Conv2D(1, (1, 1), activation=None, kernel_initializer="zeros", name="mask_real")(x)
+    mask_i = Conv2D(1, (1, 1), activation=None, kernel_initializer="zeros", name="mask_imag")(x)
 
-    # --- Stabilize (prevents explosion early training) ---
-    mask_r = 5.0 * ops.tanh(mask_r / 5.0)
-    mask_i = 5.0 * ops.tanh(mask_i / 5.0)
+    # --- Apply Learnable Scaling ---
+    mask_r = LearnableScale(initial_value=2.0, name="scale_r")(mask_r)
+    mask_i = LearnableScale(initial_value=2.0, name="scale_i")(mask_i)
 
     # --- Complex multiplication ---
     out_r = layers.Subtract()([
@@ -1231,13 +1134,13 @@ callbacks = [
         save_weights_only=False,
         verbose=1,
     ),
-    EarlyStopping(
-        monitor="val_loss",
-        patience=100,
-        min_delta=0.00001,
-        restore_best_weights=True,
-        verbose=1,
-    ),
+    # EarlyStopping(
+    #     monitor="val_loss",
+    #     patience=100,
+    #     min_delta=0.00001,
+    #     restore_best_weights=True,
+    #     verbose=1,
+    # ),
 ]
 
 
@@ -1358,7 +1261,7 @@ history = model.fit(
     # steps_per_epoch=steps_per_epoch,
     validation_data=val_dataset,
     # validation_steps=validation_steps,
-    callbacks=callbacks + [LrLogger()],
+    callbacks=callbacks + [LrLogger(), reduce_lr]
 )
 
 
@@ -1375,7 +1278,6 @@ model = tf.keras.models.load_model(
     custom_objects={
         "sLSTMCell": sLSTMCell,
         "mLSTMCell": mLSTMCell,
-        "WarmupCosineDecay": WarmupCosineDecay,
         "complex_enhancement_loss_pc": complex_enhancement_loss_pc,
     }
 )
@@ -1399,160 +1301,33 @@ def si_sdr(est, ref, eps=1e-8):
 
 
 def sample_reference_segments_full(wav, K, segment_len):
-    wav_len = tf.shape(wav)[0]
-
-    # If the reference is shorter than 2s, pad it
-    if wav_len < segment_len:
-        pad_len = segment_len - wav_len
-        wav_pad = tf.pad(wav, [[0, pad_len]])
-        return tf.tile(tf.expand_dims(wav_pad, 0), [K, 1])
-
-    # Spread K samples evenly across the whole file
-    # This ensures we capture the speaker's characteristics from start to finish
-    starts = tf.linspace(0.0, tf.cast(wav_len - segment_len, tf.float32), K)
-    starts = tf.cast(starts, tf.int32)
-
-    return tf.map_fn(
-        lambda s: wav[s : s + segment_len],
-        starts,
-        fn_output_signature=tf.TensorSpec(shape=[segment_len], dtype=tf.float32),
-    )
+    return _WAVEFORM_ENHANCER.sample_reference_segments_full(wav, K, segment_len)
 
 
 def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
-    """
-    Inference aligned with training distribution.
-    - Waveform chunking
-    - Fixed chunk length (matches training)
-    - Consistent STFT shape
-    - Proper overlap-add
-    """
-
-    # ---- ensure tensor ----
-    if isinstance(noisy_wav, np.ndarray):
-        noisy_wav = tf.convert_to_tensor(noisy_wav, tf.float32)
-    if isinstance(ref_wav, np.ndarray):
-        ref_wav = tf.convert_to_tensor(ref_wav, tf.float32)
-
-    noisy_wav = noisy_wav.numpy()
-
-    # ==========================================================
-    # 🔑 MATCH TRAINING SHAPE
-    # ==========================================================
-    CHUNK_LEN = CHUNK_SIZE # MUST match training (change if you trained on 32000)
-    HOP_LEN = int(CHUNK_LEN * (1 - overlap))
-
-    REF_LEN = 16000  # already correct (98 frames)
-
-    total_len = len(noisy_wav)
-
-    enhanced_output = np.zeros(total_len)
-    window_sum = np.zeros(total_len)
-
-    window = np.hanning(CHUNK_LEN)
-
-    # ==========================================================
-    # 🔑 FIXED reference (same for all chunks)
-    # ==========================================================
-    ref_segments = sample_reference_segments_full(ref_wav, K=K, segment_len=REF_LEN)
-
-    ref_specs_complex = tf.map_fn(
-        lambda x: tf.signal.stft(
-            x,
-            frame_length=frame_length,
-            frame_step=frame_step,
-            fft_length=n_fft,
-        ),
-        ref_segments,
-        fn_output_signature=tf.TensorSpec(shape=[98, 256], dtype=tf.complex64),
+    return _WAVEFORM_ENHANCER.enhance_audio_consistent(
+        noisy_wav, ref_wav, model, K=K, overlap=overlap
     )
-
-    ref_specs = complex_to_2ch(ref_specs_complex)[None, ...]
-
-    # ==========================================================
-    # 🔑 sliding window over waveform
-    # ==========================================================
-    for start in range(0, total_len, HOP_LEN):
-
-        end = start + CHUNK_LEN
-        chunk = noisy_wav[start:end]
-
-        if len(chunk) < CHUNK_LEN:
-            chunk = np.pad(chunk, (0, CHUNK_LEN - len(chunk)))
-
-        chunk_tf = tf.convert_to_tensor(chunk, tf.float32)
-
-        # ---- SAME preprocessing as training ----
-        noisy_spec = tf.signal.stft(
-            chunk_tf, frame_length=frame_length, frame_step=frame_step, fft_length=n_fft
-        )
-
-        noisy_2ch = complex_to_2ch(noisy_spec)[None, ...]
-
-        # ---- inference ----
-        enhanced_2ch = model.predict([noisy_2ch, ref_specs], verbose=0)[0]
-
-        enhanced_complex = tf.complex(enhanced_2ch[..., 0], enhanced_2ch[..., 1])
-
-        enhanced_chunk = tf.signal.inverse_stft(
-            enhanced_complex,
-            frame_length=frame_length,
-            frame_step=frame_step,
-            fft_length=n_fft,
-        ).numpy()
-
-        # ---- overlap-add ----
-        valid_end = min(start + len(enhanced_chunk), total_len)
-        valid_len = valid_end - start
-
-        enhanced_output[start:valid_end] += (
-            enhanced_chunk[:valid_len] * window[:valid_len]
-        )
-        window_sum[start:valid_end] += window[:valid_len]
-
-        if end >= total_len:
-            break
-
-    # ---- normalize overlap ----
-    window_sum[window_sum == 0] = 1e-8
-    enhanced_output /= window_sum
-
-    return enhanced_output.astype(np.float32)
 
 
 def normalize(x):
-    return x / (np.max(np.abs(x)) + 1e-9)
+    return _normalize(x)
 
 
 def pesq_score(clean, enhanced):
-    try:
-        clean, enhanced = normalize(clean), normalize(enhanced)
-        mode = "nb" if SR == 8000 else "wb"
-        return pesq(SR, clean, enhanced, mode)
-    except Exception as e:
-        # Catch specific or general exceptions
-        print(f"Error calculating PESQ: {e}")
-        return np.nan
+    return _pesq_score(clean, enhanced)
 
 
 def stoi_score(clean, enhanced):
-    try:
-        clean, enhanced = normalize(clean), normalize(enhanced)
-        return stoi(clean, enhanced, SR, extended=False)
-    except Exception as e:
-        # Catch specific or general exceptions
-        print(f"Error calculating STOI: {e}")
-        return np.nan
+    return _stoi_score(clean, enhanced)
 
 
 def load_resample_8k(path):
-    audio, _ = librosa.load(path, sr=8000, mono=True)
-    return audio
+    return _load_resample_8k(path)
 
 
 def sanitize(x):
-    x = np.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
-    return x
+    return _sanitize(x)
 
 
 # ==========================================================
