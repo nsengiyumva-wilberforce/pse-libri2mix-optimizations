@@ -1261,7 +1261,7 @@ history = model.fit(
     # steps_per_epoch=steps_per_epoch,
     validation_data=val_dataset,
     # validation_steps=validation_steps,
-    callbacks=callbacks + [LrLogger(), reduce_lr]
+    callbacks=callbacks + [LrLogger()],
 )
 
 
