@@ -47,7 +47,7 @@ class LibriSpeechDatasetBuilder:
 
         return mix_list, ref_list, tgt_list
 
-    def load_libri_speech_triplet_multiview(self, mix_path, ref_path, tgt_path, K=4, ref_len=8000 * 2):
+    def load_libri_speech_triplet_multiview(self, mix_path, ref_path, tgt_path, K=4, ref_len=16600):
         clean = self.audio_toolkit.preprocess_tf(tgt_path)
         noisy = self.audio_toolkit.preprocess_tf(mix_path)
         ref = self.audio_toolkit.preprocess_tf(ref_path)
@@ -83,6 +83,8 @@ class LibriSpeechDatasetBuilder:
 
     def configure_dataset(self, mixture_files, reference_files, target_files, is_train=True, K=4):
         ds = tf.data.Dataset.from_tensor_slices((mixture_files, reference_files, target_files))
+        if is_train:
+            ds = ds.shuffle(buffer_size=len(mixture_files))
         ds = ds.map(
             lambda n, r, t: self.load_libri_speech_triplet_multiview(n, r, t, K),
             num_parallel_calls=tf.data.AUTOTUNE,
@@ -94,7 +96,7 @@ class LibriSpeechDatasetBuilder:
             num_parallel_calls=tf.data.AUTOTUNE,
         )
         if is_train:
-            ds = ds.shuffle(10000)
+            ds = ds.shuffle(2000)
         ds = ds.map(
             lambda mix, ref, clean: self.convert_to_spectrogram_multiview(mix, ref, clean),
             num_parallel_calls=tf.data.AUTOTUNE,
