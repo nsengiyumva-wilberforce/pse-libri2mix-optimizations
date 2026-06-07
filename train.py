@@ -273,7 +273,7 @@ val_dataset = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 test_dataset = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 for noise, clean in train_dataset.take(1):
     print(noise["noisy_main"].shape, noise["noisy_ref"].shape, clean.shape)
-total_train_samples = len(TRAIN_MIX)
+total_train_samples = 73304
 val_size = len(DEV_MIX)
 steps_per_epoch = total_train_samples // batch_size
 validation_steps = val_size // batch_size
@@ -1248,21 +1248,21 @@ lr_schedule = WarmupCosineDecay(
 )
 
 optimizer = tf.keras.optimizers.Adam(
-    learning_rate=lr_schedule, weight_decay=1e-3, clipnorm=1.0
+    learning_rate=lr_schedule, weight_decay=5e-6, clipnorm=1.0
 )
 
 model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-# history = model.fit(
-#     train_dataset,
-#     epochs=EPOCHS,
-#     # steps_per_epoch=steps_per_epoch,
-#     validation_data=val_dataset,
-#     # validation_steps=validation_steps,
-#     callbacks=callbacks + [LrLogger()],
-# )
+history = model.fit(
+    train_dataset,
+    epochs=EPOCHS,
+    steps_per_epoch=steps_per_epoch,
+    # validation_data=val_dataset,
+    # validation_steps=validation_steps,
+    callbacks=callbacks,
+)
 
 
 # Evaluate the model on test set
@@ -1304,7 +1304,7 @@ def sample_reference_segments_full(wav, K, segment_len):
     return _WAVEFORM_ENHANCER.sample_reference_segments_full(wav, K, segment_len)
 
 
-def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
+def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.875):
     return _WAVEFORM_ENHANCER.enhance_audio_consistent(
         noisy_wav, ref_wav, model, K=K, overlap=overlap
     )
