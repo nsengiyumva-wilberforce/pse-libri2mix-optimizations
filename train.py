@@ -1,8 +1,6 @@
 import os
 
 import warnings
-
-from optim_factory import configure_optimization
 warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
 import sys
@@ -110,20 +108,17 @@ def load_from_folder(data_root, split):
     return _DATASET_BUILDER.load_scp(mix_path, ref_path, tgt_path)
 
 
+sr = 8000
+n_fft = 510  # 128 freq bins
+frame_length = 400
+frame_step = 160
+trim_length = 31000  # 384 time frames after STFT
+total_length = 3.855  # seconds
+batch_size = 4
+EPOCHS = 300
+CHUNK_SIZE = 31000 # chunk into 4s
+STRIDE = CHUNK_SIZE // 2  # 50% overlap
 TARGET_SR = 8000
-total_length = 4.0
-trim_length = 32900
-
-# Clean power-of-two STFT settings for smaller features
-n_fft = 254             # Yields exactly 129 frequency bins (fast!)
-frame_length = 256      # 32ms window
-frame_step = 128        # 16ms stride (50% overlap)
-
-CHUNK_SIZE = 32900
-STRIDE = CHUNK_SIZE // 2
-
-batch_size = 20
-EPOCHS = 150
 _AUDIO_TOOLKIT = AudioToolkit(
     target_sr=TARGET_SR,
     frame_length=frame_length,
@@ -768,7 +763,7 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
     x = Activation(activation)(x)
 
     # ---- Time branch (3 x 1) ----
-    t_branch = Conv2D(filters, (5, 5), padding="same",
+    t_branch = Conv2D(filters, (5,5), padding="same",
                       kernel_initializer="he_normal",
                       name=f"{name_prefix}_tconv")(x)
     if use_bn:
@@ -778,8 +773,25 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
     # ---- Merge ----
     x = Concatenate(name=f"{name_prefix}_concat")([f_branch, t_branch])
 
+    # sencond branch, we get frequency convolutions over time
+    t_branch_2 = Conv2D(filters, (5, 5), padding="same",
+                        kernel_initializer="he_normal",
+                        name=f"{name_prefix}_tconv2")(orginal_x)
+    if use_bn:
+        orginal_x = BatchNormalization(name=f"{name_prefix}_tbn2")(t_branch_2)
+    orginal_x = Activation(activation)(t_branch_2)
 
+    f_branch_2 = Conv2D(filters, (3, 3), padding="same",
+                        kernel_initializer="he_normal",
+                        name=f"{name_prefix}_fconv2")(orginal_x)
+    if use_bn:
+        orginal_x = BatchNormalization(name=f"{name_prefix}_fbn2")(f_branch_2)
+    orginal_x = Activation(activation)(f_branch_2)
+
+    # Merge again
+    x = Concatenate(name=f"{name_prefix}_concat2")([t_branch_2, f_branch_2])
     # merge the two branches  for x and original_x
+    x = Concatenate(name=f"{name_prefix}_final_concat")([x, orginal_x])
 
     # ---- Separable TF mixing ----
     x = DepthwiseConv2D((3,3), padding="same",
@@ -919,7 +931,7 @@ def custom_unet(
         upsample = upsample_simple
 
     main_input = Input(input_shape, name="noisy_main")  # (T, F, C)
-    ref_input = Input((4, 128, 128, 2), name="noisy_ref")
+    ref_input = Input((4, 102, 256, 2), name="noisy_ref")
     main_input_copy = ops.copy(main_input)
 
     x = main_input / (ops.std(main_input) + 1e-5)
@@ -932,7 +944,7 @@ def custom_unet(
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
         dropout += dropout_change_per_layer
-        filters = int(filters * 1.5)
+        filters = filters * 2
 
     ref_enc = ref_x
     filters_ref = filters // (2**num_layers)
@@ -953,14 +965,36 @@ def custom_unet(
         # concatenate them
         ref_enc = Concatenate()([ref_enc_f, ref_enc__t])
 
+
+        # second branch to obtain frequency using time
+
+        ref_enc_t_1 = TimeDistributed(
+            Conv2D(filters_ref, (5, 5), activation=activation, padding="same")
+        )(original_ref_enc)
+
+        if use_batch_norm:
+            original_ref_enc = TimeDistributed(BatchNormalization())(ref_enc_t_1)
+
+        ref_enc_f_1 = TimeDistributed(
+            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
+        )(original_ref_enc)
+
+        if use_batch_norm:
+            original_ref_enc = TimeDistributed(BatchNormalization())(ref_enc_f_1)
+
+        # concatenate them second branch
+        ref_enc_branch2 = Concatenate()([ref_enc_t_1, ref_enc_f_1])
+
+        # now concatenate both branches to get a richer representation that captures both time and frequency interactions
+        ref_enc = Concatenate()([ref_enc, ref_enc_branch2])
+
         # then look at both time and frequency with a 3x3 convolution
         ref_enc = TimeDistributed(
             Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
         )(ref_enc)
-        
         if use_batch_norm:
             ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
-        ref_enc = TimeDistributed(MaxPooling2D((2, 2)))(ref_enc)
+        ref_enc = TimeDistributed(MaxPooling2D((1, 2)))(ref_enc)
         filters_ref *= 2
 
     ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
@@ -968,13 +1002,13 @@ def custom_unet(
     # ref_seq = add_gru_block(
     #     ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
     # )
-    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=1, prefix="ref")
+    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
     
     # NEW: Attentive Pooling
     speaker_embed = attentive_pooling(ref_seq, name="speaker_att_pool")
     
     # Optional: A final projection to stabilize the embedding
-    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(speaker_embed)
+    speaker_embed = layers.Dense(256, activation="tanh", name="speaker_final_proj")(speaker_embed)
 
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
 
@@ -1002,7 +1036,7 @@ def custom_unet(
 
     # --- 4. The xLSTM Core ---
     # Process the sequence with the xLSTM
-    x_seq = add_xlstm_block(x_seq, hidden_dim=256, num_layers=1, prefix="main_bottleneck")
+    x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main_bottleneck")
 
     # --- 5. Expansion & Reconstruction ---
     # Map back to the compressed spatial shape
@@ -1020,7 +1054,7 @@ def custom_unet(
         dropout = 0.0
         dropout_change_per_layer = 0.0
     for conv in reversed(down_layers):
-        filters = conv.shape[-1]
+        filters //= 2  # decreasing number of filters with each layer
         dropout -= dropout_change_per_layer
         x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
         # Apply FiLM conditioning after upsampling but before concatenation
@@ -1042,8 +1076,7 @@ def custom_unet(
             activation=activation,
         )
         # x = tf_alternating_block(x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}")
-    spk_res_final = broadcast_speaker(speaker_embed, x)
-    x = ifi_block(x, spk_res_final, channels=x.shape[-1], name="final_refinement")
+    x = lca_block(x, channels=x.shape[-1], name="final_refinement")
     # --- Split noisy input into real / imag ---
     input_r = main_input_copy[..., 0:1]
     input_i = main_input_copy[..., 1:2]
@@ -1082,15 +1115,15 @@ model_filename = (
     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
 )
 model = custom_unet(
-    input_shape=(256, 128, 2),
+    input_shape=(192, 256, 2),
     use_batch_norm=True,
     num_classes=2,
     filters=32,
     use_dropout_on_upsampling=False,
-    num_layers=5,
+    num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
-    dropout=0.5,
+    dropout=0.2,
     output_activation="sigmoid",
 )
 callbacks = [
@@ -1101,13 +1134,13 @@ callbacks = [
         save_weights_only=False,
         verbose=1,
     ),
-    EarlyStopping(
-        monitor="val_loss",
-        patience=12,
-        min_delta=0.00001,
-        restore_best_weights=True,
-        verbose=1,
-    ),
+    # EarlyStopping(
+    #     monitor="val_loss",
+    #     patience=100,
+    #     min_delta=0.00001,
+    #     restore_best_weights=True,
+    #     verbose=1,
+    # ),
 ]
 
 
@@ -1122,6 +1155,9 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
     mag_p = tf.sqrt(r_p**2 + i_p**2 + eps)
     mag_loss = tf.reduce_mean(tf.abs(mag_t**gamma - mag_p**gamma))
 
+    # 2. Compressed Complex Loss (Handles Phase implicitly and stably)
+    # This transforms the complex values into the compressed domain
+    # Formula: (r + ji) / |mag| * |mag|^gamma = (r + ji) * |mag|^(gamma-1)
     factor_t = mag_t**(gamma - 1)
     factor_p = mag_p**(gamma - 1)
     
@@ -1163,26 +1199,38 @@ initial_lr = 1e-4
 alpha = 0.05  # final lr fraction
 
 
+class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, initial_lr, total_steps, warmup_steps, alpha=0.0):
+        self.initial_lr = initial_lr
+        self.total_steps = total_steps
+        self.warmup_steps = warmup_steps
+        self.alpha = alpha
 
-STEPS_PER_EPOCH = 500  # Number of batches in your dataset per epoch
-TOTAL_EPOCHS = 150      # How long you plan to train
-WARMUP_EPOCHS = 5      # Linearly scale up LR for the first 5 epochs
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
+        total_steps = tf.cast(self.total_steps, tf.float32)
 
-# 2. Call the factory function
-optimizer = configure_optimization(
-    optimizer_name="adamw",   # Choose "adamw" or "lion"
-    base_lr=1e-3,             # Peak learning rate after warmup
-    steps_per_epoch=STEPS_PER_EPOCH,
-    total_epochs=TOTAL_EPOCHS,
-    warmup_epochs=WARMUP_EPOCHS,
-    weight_decay=1e-4,
-    clip_norm=1.0,            # Prevents exploding gradients
-    min_lr=1e-6               # The learning rate floor
-)
+        def warmup_lr():
+            return self.initial_lr * step / warmup_steps
 
+        def decay_lr():
+            progress = (step - warmup_steps) / (total_steps - warmup_steps)
+            progress = tf.clip_by_value(progress, 0.0, 1.0)
+            cosine_decay = 0.5 * (1 + tf.cos(tf.constant(math.pi) * progress))
+            decayed = (1 - self.alpha) * cosine_decay + self.alpha
+            return self.initial_lr * decayed
 
-# 4. Fit your model as usual
-# model.fit(train_dataset, epochs=TOTAL_EPOCHS)
+        return tf.cond(step < warmup_steps, warmup_lr, decay_lr)
+
+    def get_config(self):
+        return {
+            "initial_lr": self.initial_lr,
+            "total_steps": self.total_steps,
+            "warmup_steps": self.warmup_steps,
+            "alpha": self.alpha,
+        }
+
 
 class LrLogger(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
@@ -1192,22 +1240,37 @@ class LrLogger(tf.keras.callbacks.Callback):
         print(f"Epoch {epoch+1}: Learning rate = {lr.numpy():.6f}")
 
 
+lr_schedule = WarmupCosineDecay(
+    initial_lr=initial_lr,
+    total_steps=total_steps,
+    warmup_steps=warmup_steps,
+    alpha=alpha,
+)
+
+optimizer = tf.keras.optimizers.Adam(
+    learning_rate=lr_schedule, weight_decay=1e-3, clipnorm=1.0
+)
 
 model.summary()
 
 model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
 
-history = model.fit(
-    train_dataset,
-    epochs=EPOCHS,
-    # steps_per_epoch=steps_per_epoch,
-    validation_data=val_dataset,
-    # validation_steps=validation_steps,
-    callbacks=callbacks,
-)
+# history = model.fit(
+#     train_dataset,
+#     epochs=EPOCHS,
+#     # steps_per_epoch=steps_per_epoch,
+#     validation_data=val_dataset,
+#     # validation_steps=validation_steps,
+#     callbacks=callbacks + [LrLogger()],
+# )
+
+
+# Evaluate the model on test set
 model.load_weights(
     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
 )
+# model.trainable = False
+# print("Model loaded for inference")
 
 # load the keras model for inference
 # model = tf.keras.models.load_model(

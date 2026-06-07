@@ -48,7 +48,14 @@ class WaveformEnhancer:
         if hop_len <= 0:
             raise ValueError("overlap produces an invalid hop length")
 
-        ref_len = 16000
+        ref_len = 16600
+        # compute expected spectrogram shape for reference segments so fn_output_signature matches
+        fft_bins = self.n_fft // 2 + 1
+        # number of frames produced by tf.signal.stft for a signal of length ref_len
+        if ref_len < self.frame_length:
+            expected_ref_frames = 1
+        else:
+            expected_ref_frames = 1 + (ref_len - self.frame_length) // self.frame_step
         total_len = len(noisy_wav)
         if total_len == 0:
             return noisy_wav.astype(np.float32)
@@ -66,7 +73,7 @@ class WaveformEnhancer:
                 fft_length=self.n_fft,
             ),
             ref_segments,
-            fn_output_signature=tf.TensorSpec(shape=[98, 256], dtype=tf.complex64),
+            fn_output_signature=tf.TensorSpec(shape=[expected_ref_frames, fft_bins], dtype=tf.complex64),
         )
         ref_specs = complex_to_2ch(ref_specs_complex)[None, ...]
         if not np.isfinite(ref_specs.numpy()).all():

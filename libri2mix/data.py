@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import random
 
+import numpy as np
+from audiomentations import AddGaussianNoise, Compose, Gain, PolarityInversion, Shift
 import tensorflow as tf
 
 from .audio import AudioToolkit
@@ -12,6 +15,11 @@ class LibriSpeechDatasetBuilder:
     audio_toolkit: AudioToolkit
     chunk_size: int
     stride: int
+
+    def __post_init__(self):
+        pass
+
+
 
     def load_scp(self, mix_path, ref_path, tgt_path):
         def get_dict(path):
@@ -47,10 +55,16 @@ class LibriSpeechDatasetBuilder:
 
         return mix_list, ref_list, tgt_list
 
-    def load_libri_speech_triplet_multiview(self, mix_path, ref_path, tgt_path, K=4, ref_len=16600):
+    def load_libri_speech_triplet_multiview(self, mix_path, ref_path, tgt_path, K=4, ref_len=16600, is_train=False):
         clean = self.audio_toolkit.preprocess_tf(tgt_path)
         noisy = self.audio_toolkit.preprocess_tf(mix_path)
         ref = self.audio_toolkit.preprocess_tf(ref_path)
+        clean.set_shape([None])
+        noisy.set_shape([None])
+        ref.set_shape([None])
+
+
+
         mix_chunks = self.audio_toolkit.split_into_chunks(noisy, self.chunk_size, self.stride)
         clean_chunks = self.audio_toolkit.split_into_chunks(clean, self.chunk_size, self.stride)
         ref_segments = self.audio_toolkit.sample_reference_segments(ref, K, ref_len)
@@ -86,7 +100,7 @@ class LibriSpeechDatasetBuilder:
         if is_train:
             ds = ds.shuffle(buffer_size=len(mixture_files))
         ds = ds.map(
-            lambda n, r, t: self.load_libri_speech_triplet_multiview(n, r, t, K),
+            lambda n, r, t: self.load_libri_speech_triplet_multiview(n, r, t, K, is_train=is_train),
             num_parallel_calls=tf.data.AUTOTUNE,
         )
         ds = ds.interleave(
