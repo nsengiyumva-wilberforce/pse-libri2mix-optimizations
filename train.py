@@ -1,4 +1,7 @@
+import argparse
+import base64
 import os
+import zlib
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
@@ -11,6 +14,7 @@ import tensorflow as tf
 from tqdm import tqdm
 from pesq import pesq
 from pystoi import stoi
+from pystoi.utils import thirdoct
 import csv
 
 import warnings
@@ -33,6 +37,7 @@ from keras import ops
 from keras.models import Sequential
 import tensorflow_io as tfio
 from libri2mix import AudioToolkit, LibriSpeechDatasetBuilder, WaveformEnhancer
+from libri2mix.audio import conv_stft_frames
 from libri2mix.metrics import (
     load_resample_8k as _load_resample_8k,
     normalize as _normalize,
@@ -52,14 +57,17 @@ from tqdm import tqdm
 import soundfile as sf
 from tensorflow.keras.layers import (
     BatchNormalization,
+    AveragePooling2D,
     Conv2D,
     MaxPooling2D,
     Conv2DTranspose,
+    Cropping2D,
     Dropout,
     Lambda,
     SpatialDropout2D,
     LayerNormalization,
     UpSampling2D,
+    ZeroPadding2D,
     RNN,
     DepthwiseConv2D,
     Add,
@@ -87,6 +95,67 @@ from tensorflow.keras.layers import (
 tf.config.optimizer.set_jit(True)
 
 
+def _loss_choice(value):
+    key = value.strip().lower().replace("_", "-")
+    aliases = {
+        "time-mse": "time-mse",
+        "td-mse": "time-mse",
+        "stsa-mse": "stsa-mse",
+        "stsa": "stsa-mse",
+        "stoi": "stoi",
+        "estoi": "estoi",
+        "si-sdr": "si-sdr",
+        "sisdr": "si-sdr",
+        "pmsqe": "pmsqe",
+    }
+    if key not in aliases:
+        raise argparse.ArgumentTypeError(
+            "unknown loss {!r}. Choose from: time-mse, stsa-mse, stoi, estoi, si-sdr, pmsqe".format(
+                value
+            )
+        )
+    return aliases[key]
+
+
+def _parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Train the Libri2Mix enhancer with a loss from Kolbaek et al., "
+            "IEEE/ACM TASLP 2020, or evaluate the saved baseline."
+        )
+    )
+    parser.add_argument(
+        "--l",
+        type=_loss_choice,
+        default=None,
+        metavar="LOSS",
+        help=(
+            "Training loss: time-mse, stsa-mse, stoi, estoi, si-sdr, or pmsqe. "
+            "Omit to evaluate the saved baseline."
+        ),
+    )
+    parser.add_argument(
+        "--full-utterance",
+        action="store_true",
+        help=(
+            "Feed each auxiliary utterance whole instead of sampling reference segments. "
+            "The reference encoder then splits long spectrograms into contiguous chunks."
+        ),
+    )
+    parser.add_argument(
+        "--stft-interact",
+        action="store_true",
+        help=(
+            "Condition the U-Net with SEF-PNet frame similarity on the compressed "
+            "STFT instead of the speaker-embedding injection."
+        ),
+    )
+    return parser.parse_args()
+
+
+args = _parse_args()
+
+
 #--------------------------------
 # HELPERS FOR DATA LOADING
 def load_scp(mix_path, ref_path, tgt_path):
@@ -109,16 +178,35 @@ def load_from_folder(data_root, split):
 
 
 sr = 8000
-n_fft = 510  # 128 freq bins
-frame_length = 400
-frame_step = 160
-trim_length = 31000  # 384 time frames after STFT
-total_length = 3.855  # seconds
-batch_size = 4
-EPOCHS = 300
-CHUNK_SIZE = 31000 # chunk into 4s
-STRIDE = CHUNK_SIZE // 2  # 50% overlap
+
+
 TARGET_SR = 8000
+total_length = 4.0
+trim_length = 32000
+
+# SEF-PNet frontend: 32 ms window, 8 ms hop, 256-point FFT, square-root Hann.
+n_fft = 256
+frame_length = 256
+frame_step = 64
+
+CHUNK_SIZE = 4 * TARGET_SR
+STRIDE = CHUNK_SIZE // 2
+REF_CHUNK_FRAMES = 128
+# Longest auxiliary in this corpus is 17.61 s. 18 s at an 8 ms hop, rounded up
+# to a whole number of reference chunks, keeps the enrollment length static.
+_MAX_AUX_FRAMES = conv_stft_frames(18 * TARGET_SR, frame_length, frame_step)
+MAX_REF_FRAMES = int(math.ceil(_MAX_AUX_FRAMES / REF_CHUNK_FRAMES) * REF_CHUNK_FRAMES)
+N_BINS = n_fft // 2 + 1
+N_FRAMES = conv_stft_frames(CHUNK_SIZE, frame_length, frame_step)
+REF_SEGMENT_SAMPLES = 16600
+REF_SEGMENT_FRAMES = conv_stft_frames(REF_SEGMENT_SAMPLES, frame_length, frame_step)
+# SEF-PNet power-law compression on complex spectra (Li et al., beta = 0.5).
+MAG_COMPRESS = 0.5
+
+batch_size = 32
+# SEF-PNet train.sh runs 200 epochs. The step decay is defined across that span.
+EPOCHS = 200
+
 _AUDIO_TOOLKIT = AudioToolkit(
     target_sr=TARGET_SR,
     frame_length=frame_length,
@@ -253,32 +341,35 @@ def load_libri_speech_triplet_multiview(
 
 
 def configure_libri_speech_dataset(
-    mixture_files, reference_files, target_files, is_train=True, K=4
+    mixture_files, reference_files, target_files, is_train=True, K=4, full_utterance=False
 ):
+    if full_utterance:
+        return _DATASET_BUILDER.configure_dataset_full_utterance(
+            mixture_files,
+            reference_files,
+            target_files,
+            is_train=is_train,
+            max_ref_frames=MAX_REF_FRAMES,
+        )
     return _DATASET_BUILDER.configure_dataset(
         mixture_files, reference_files, target_files, is_train=is_train, K=K
     )
 
 
-train_ds = configure_libri_speech_dataset(
-    TRAIN_MIX, TRAIN_REF, TRAIN_TGT, is_train=True
+if args.full_utterance:
+    print("Reference mode: full auxiliary utterance")
+else:
+    print("Reference mode: sampled auxiliary segments")
+if args.stft_interact:
+    print("Injection: SEF-PNet STFT frame similarity")
+else:
+    print("Injection: speaker embedding, FiLM, and enrollment attention")
+print(
+    f"Frontend: {frame_length}-point sqrt-Hann, hop {frame_step}, "
+    f"chunk {CHUNK_SIZE}, stride {STRIDE}, no peak norm"
 )
-val_ds = configure_libri_speech_dataset(DEV_MIX, DEV_REF, DEV_TGT, is_train=False)
-test_ds = configure_libri_speech_dataset(TEST_MIX, TEST_REF, TEST_TGT, is_train=False)
-
-
-# # 4. Batch and Prefetch
-train_dataset = train_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
-val_dataset = val_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
-test_dataset = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
-for noise, clean in train_dataset.take(1):
-    print(noise["noisy_main"].shape, noise["noisy_ref"].shape, clean.shape)
-total_train_samples = 73304
-val_size = len(DEV_MIX)
-steps_per_epoch = total_train_samples // batch_size
-validation_steps = val_size // batch_size
-print(f"Train steps: {steps_per_epoch}")
-print(f"Val steps: {validation_steps}")
+print(f"Utterances: train {len(TRAIN_MIX)} dev {len(DEV_MIX)} test {len(TEST_MIX)}")
+print("Loader: SEF-PNet chunk dataloader (one optimizer step per chunk batch)")
 
 
 # ============ sLSTM implementation ============
@@ -643,22 +734,46 @@ def attention_concat(conv_below, skip_connection):
     return concatenate([conv_below, attention_across])
 
 
+@tf.keras.utils.register_keras_serializable()
+class PowerLawComplexSpec(Layer):
+    """Compress or expand complex spectrogram magnitude while keeping phase.
+
+    factor=0.5 matches SEF-PNet's FeaCompression. factor=2 undoes it.
+    """
+
+    def __init__(self, factor=0.5, eps=1e-8, **kwargs):
+        super().__init__(**kwargs)
+        self.factor = float(factor)
+        self.eps = float(eps)
+
+    def call(self, spec):
+        real = spec[..., 0]
+        imag = spec[..., 1]
+        magnitude = tf.sqrt(tf.square(real) + tf.square(imag) + self.eps)
+        scale = tf.pow(magnitude, self.factor) / magnitude
+        return tf.stack([real * scale, imag * scale], axis=-1)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"factor": self.factor, "eps": self.eps})
+        return config
+
+
 def film(x, speaker_embedding):
     """
     Personalized Feature-wise Linear Modulation.
+    Zero-initialized so training starts at the identity map.
     """
     C = x.shape[-1]
 
-    # In 2026 research, zero-initializing these layers is standard
-    # so the model starts by doing nothing and learns to modulate.
     gamma = Dense(C, kernel_initializer="zeros")(speaker_embedding)
     beta = Dense(C, kernel_initializer="zeros")(speaker_embedding)
+    gamma = Activation("tanh")(gamma)
+    beta = Activation("tanh")(beta)
 
-    # Reshape for broadcasting (B, 1, 1, C)
     gamma = Reshape((1, 1, C))(gamma)
     beta = Reshape((1, 1, C))(beta)
 
-    # Modern FiLM: x = x * (1 + gamma) + beta
     return Multiply()([x, 1.0 + gamma]) + beta
 
 
@@ -823,92 +938,371 @@ def broadcast_speaker(embed, target_tensor):
         # Tile/Broadcast to (T, F, C)
         return layers.UpSampling2D(size=(target_shape[1], target_shape[2]))(s)
 
-def lca_block(x, channels, r=4, name="lca"):
-    inter_channels = int(channels // r)
-    
-    # Local Attention
-    xl = layers.Conv2D(inter_channels, 1, padding="same", name=f"{name}_l1")(x)
-    xl = layers.BatchNormalization()(xl)
-    xl = layers.Activation("relu")(xl)
-    xl = layers.Conv2D(channels, 1, padding="same", name=f"{name}_l2")(xl)
-    xl = layers.BatchNormalization()(xl)
-    
-    # Global Attention
-    xg = layers.GlobalAveragePooling2D(keepdims=True)(x)
-    xg = layers.Conv2D(inter_channels, 1, padding="same", name=f"{name}_g1")(xg)
-    xg = layers.BatchNormalization()(xg)
-    xg = layers.Activation("relu")(xg)
-    xg = layers.Conv2D(channels, 1, padding="same", name=f"{name}_g2")(xg)
-    xg = layers.BatchNormalization()(xg)
-    
-    # Combine
-    xlg = layers.Add()([xl, xg])
-    wei = layers.Activation("sigmoid")(xlg)
-    return layers.Multiply()([x, wei])
+def eca_kernel_size(channels, gamma=2, b=1):
+    """Odd 1D kernel from ECA-Net: k = |log2(C)/gamma + b/gamma|, forced odd."""
+    t = int(abs((math.log2(max(int(channels), 1)) + b) / gamma))
+    return t if t % 2 else t + 1
 
-def ifi_block(x, residual, channels, r=4, name="ifi"):
-    # First Interaction
-    xa = layers.Add()([x, residual])
-    # LCA logic inside IFI
-    xl = layers.Conv2D(channels // r, 1, padding="same")(xa)
-    xl = layers.BatchNormalization()(xl)
-    xl = layers.Activation("relu")(xl)
-    xl = layers.Conv2D(channels, 1, padding="same")(xl)
-    xl = layers.BatchNormalization()(xl)
-    
-    xg = layers.GlobalAveragePooling2D(keepdims=True)(xa)
-    xg = layers.Conv2D(channels // r, 1, padding="same")(xg)
-    xg = layers.BatchNormalization()(xg)
-    xg = layers.Activation("relu")(xg)
-    xg = layers.Conv2D(channels, 1, padding="same")(xg)
-    xg = layers.BatchNormalization()(xg)
-    
-    wei = layers.Activation("sigmoid")(layers.Add()([xl, xg]))
-    # Soft gating: xi = x * wei + residual * (1 - wei)
-    xi = layers.Add()([
-        layers.Multiply()([x, wei]),
-        layers.Multiply()([residual, layers.Lambda(lambda x: 1.0 - x)(wei)])
-    ])
-    
-    # Second Interaction (Iterative)
-    xl2 = layers.Conv2D(channels // r, 1, padding="same")(xi)
-    xl2 = layers.BatchNormalization()(xl2)
-    xl2 = layers.Activation("relu")(xl2)
-    xl2 = layers.Conv2D(channels, 1, padding="same")(xl2)
-    xl2 = layers.BatchNormalization()(xl2)
-    
-    xg2 = layers.GlobalAveragePooling2D(keepdims=True)(xi)
-    xg2 = layers.Conv2D(channels // r, 1, padding="same")(xg2)
-    xg2 = layers.BatchNormalization()(xg2)
-    xg2 = layers.Activation("relu")(xg2)
-    xg2 = layers.Conv2D(channels, 1, padding="same")(xg2)
-    xg2 = layers.BatchNormalization()(xg2)
-    
-    wei2 = layers.Activation("sigmoid")(layers.Add()([xl2, xg2]))
-    # Final Output
-    return layers.Add(name=name)([
-        layers.Multiply()([x, wei2]),
-        layers.Multiply()([residual, layers.Lambda(lambda x: 1.0 - x)(wei2)])
-    ])
+
+def eca_block(x, name="eca"):
+    """Efficient channel attention. A few 1D-conv weights replace LCA's two squeeze-excitation branches."""
+    channels = int(x.shape[-1])
+    y = GlobalAveragePooling2D(name=f"{name}_gap")(x)
+    y = Reshape((channels, 1), name=f"{name}_seq")(y)
+    y = layers.Conv1D(
+        1,
+        eca_kernel_size(channels),
+        padding="same",
+        use_bias=False,
+        name=f"{name}_conv",
+    )(y)
+    y = Activation("sigmoid", name=f"{name}_gate")(y)
+    y = Reshape((1, 1, channels), name=f"{name}_map")(y)
+    return Multiply(name=name)([x, y])
+
+
+@tf.keras.utils.register_keras_serializable()
+class ASFFFusion(Layer):
+    """Two-input adaptively spatial feature fusion.
+
+    Both maps already share height, width, and channels. Each is projected with a
+    1x1 convolution, a second 1x1 scores the pair, and a per-bin softmax mixes
+    them. The score convolution is zero-initialized, so training starts from an
+    equal mix.
+    """
+
+    def __init__(self, compress=8, **kwargs):
+        super().__init__(**kwargs)
+        self.compress = int(compress)
+        # Created here so Keras tracks them. build() is too late for the functional model.
+        self.compress_left = Conv2D(
+            self.compress, 1, padding="same", use_bias=False, kernel_initializer="he_normal"
+        )
+        self.compress_right = Conv2D(
+            self.compress, 1, padding="same", use_bias=False, kernel_initializer="he_normal"
+        )
+        self.level = Conv2D(
+            2, 1, padding="same", kernel_initializer="zeros", bias_initializer="zeros"
+        )
+
+    def build(self, input_shape):
+        left_shape = input_shape[0]
+        self.compress_left.build(left_shape)
+        self.compress_right.build(left_shape)
+        score_shape = tuple(left_shape[:-1]) + (2 * self.compress,)
+        self.level.build(score_shape)
+        super().build(input_shape)
+
+    def call(self, inputs):
+        left, right = inputs
+        scores = self.level(
+            tf.concat([self.compress_left(left), self.compress_right(right)], axis=-1)
+        )
+        weights = tf.nn.softmax(scores, axis=-1)
+        left_w, right_w = tf.split(weights, num_or_size_splits=2, axis=-1)
+        return left_w * left + right_w * right
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"compress": self.compress})
+        return config
 
 def attentive_pooling(x, name="att_pool"):
     """
-    Self-attention pooling (Attentive Statistics Pooling lite).
+    Attentive statistics pooling.
     Input shape: (Batch, Time, Channels)
-    Output shape: (Batch, Channels)
+    Output shape: (Batch, 2 * Channels) = weighted mean and standard deviation.
     """
     att_weights = layers.Dense(1, activation=None, name=f"{name}_dense")(x)
-    
-
     att_weights = layers.Softmax(axis=1, name=f"{name}_softmax")(att_weights)
-    
 
-    context = layers.Lambda(
+    mean = layers.Lambda(
         lambda inputs: ops.sum(inputs[0] * inputs[1], axis=1),
-        name=f"{name}_weighted_sum"
+        name=f"{name}_weighted_sum",
     )([x, att_weights])
-    
-    return context
+    second = layers.Lambda(
+        lambda inputs: ops.sum(ops.square(inputs[0]) * inputs[1], axis=1),
+        name=f"{name}_second_moment",
+    )([x, att_weights])
+    std = layers.Lambda(
+        lambda moments: ops.sqrt(ops.relu(moments[0] - ops.square(moments[1])) + 1e-8),
+        name=f"{name}_std",
+    )([second, mean])
+    return layers.Concatenate(axis=-1, name=f"{name}_stats")([mean, std])
+
+def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
+    """
+    Cross-attention conditioning.
+
+    x: (B, T, F, C)
+    speaker_embedding: (B, D)
+    returns: (B, T, F, C)
+    """
+    B, T, F, C = x.shape
+    # Flatten spatial dims: (B, T*F, C)
+    x_flat = Reshape((T * F, C))(x)
+    # Speaker as query: (B, 1, D)
+    q = Reshape((1, speaker_embedding.shape[-1]))(speaker_embedding)
+    # Project to match channels
+    q = Dense(C)(q)
+    # Cross-attention
+    attn = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(
+        query=q, value=x_flat, key=x_flat
+    )
+    # Broadcast back to all positions
+    attn = RepeatVector(T * F)(attn[:, 0, :])
+    # Reshape back to feature map
+    attn_map = Reshape((T, F, C))(attn)
+    # Residual modulation
+    return x + attn_map
+
+@tf.keras.utils.register_keras_serializable()
+class ChunkFullReference(Layer):
+    """Split a full-utterance spectrogram into contiguous time chunks."""
+
+    def __init__(self, chunk_frames=128, **kwargs):
+        super().__init__(**kwargs)
+        self.chunk_frames = int(chunk_frames)
+
+    def call(self, inputs):
+        ref_x, ref_mask = inputs
+        time = ref_x.shape[1]
+        freq = ref_x.shape[2]
+        channels = ref_x.shape[3]
+        if time is None or freq is None or channels is None:
+            raise ValueError("full-utterance reference must have a fixed spectrogram length")
+        if time % self.chunk_frames != 0:
+            raise ValueError(
+                f"reference frames ({time}) must be divisible by chunk size ({self.chunk_frames})"
+            )
+        n_chunks = time // self.chunk_frames
+        ref_x = tf.reshape(ref_x, (-1, n_chunks, self.chunk_frames, freq, channels))
+        frame_mask = tf.reshape(ref_mask, (-1, n_chunks, self.chunk_frames))
+        return ref_x, tf.reduce_max(frame_mask, axis=-1)
+
+    def compute_output_shape(self, input_shape):
+        ref_shape, mask_shape = input_shape
+        time = ref_shape[1]
+        n_chunks = None if time is None else time // self.chunk_frames
+        return [
+            (ref_shape[0], n_chunks, self.chunk_frames, ref_shape[2], ref_shape[3]),
+            (mask_shape[0], n_chunks),
+        ]
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"chunk_frames": self.chunk_frames})
+        return config
+
+
+@tf.keras.utils.register_keras_serializable()
+class ApplyChunkMask(Layer):
+    def call(self, inputs):
+        sequence, mask = inputs
+        return sequence * tf.expand_dims(tf.cast(mask, sequence.dtype), axis=-1)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
+
+
+@tf.keras.utils.register_keras_serializable()
+class MaskedAttentivePooling(Layer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.score = Dense(1, use_bias=True)
+
+    def call(self, inputs):
+        sequence, mask = inputs
+        scores = self.score(sequence)
+        mask = tf.expand_dims(tf.cast(mask, scores.dtype), axis=-1)
+        weights = tf.nn.softmax(scores + (1.0 - mask) * tf.constant(-1e9, dtype=scores.dtype), axis=1)
+        mean = tf.reduce_sum(sequence * weights, axis=1)
+        centered = sequence - tf.expand_dims(mean, axis=1)
+        variance = tf.reduce_sum(weights * tf.square(centered), axis=1)
+        std = tf.sqrt(variance + tf.constant(1e-8, dtype=variance.dtype))
+        return tf.concat([mean, std], axis=-1)
+
+    def compute_output_shape(self, input_shape):
+        sequence_shape, _ = input_shape
+        channels = sequence_shape[-1]
+        if channels is None:
+            return (sequence_shape[0], None)
+        return (sequence_shape[0], channels * 2)
+
+
+def _reference_conv_sequence(ref_enc, filters_ref, num_layers, activation, use_batch_norm, prefix=""):
+    def layer(cls, *args, name=None, **kwargs):
+        if name:
+            kwargs["name"] = name
+        return cls(*args, **kwargs)
+
+    def conv(kernel, name=None):
+        return layer(
+            Conv2D, filters_ref, kernel, activation=activation, padding="same", name=name
+        )
+
+    for l in range(num_layers):
+        original_ref_enc = ref_enc
+        ref_enc_f = TimeDistributed(conv((1, 3), f"{prefix}_fconv_{l}" if prefix else None))(ref_enc)
+        if use_batch_norm:
+            ref_enc = TimeDistributed(layer(BatchNormalization, name=f"{prefix}_fbn_{l}" if prefix else None))(
+                ref_enc_f
+            )
+        ref_enc__t = TimeDistributed(conv((3, 1), f"{prefix}_tconv_{l}" if prefix else None))(ref_enc)
+        if use_batch_norm:
+            ref_enc = TimeDistributed(layer(BatchNormalization, name=f"{prefix}_tbn_{l}" if prefix else None))(
+                ref_enc__t
+            )
+        ref_enc = layer(Concatenate, name=f"{prefix}_cat_{l}" if prefix else None)([ref_enc_f, ref_enc__t])
+        ref_enc_t_1 = TimeDistributed(conv((3, 1), f"{prefix}_tconv_b_{l}" if prefix else None))(
+            original_ref_enc
+        )
+        if use_batch_norm:
+            original_ref_enc = TimeDistributed(
+                layer(BatchNormalization, name=f"{prefix}_tbn_b_{l}" if prefix else None)
+            )(ref_enc_t_1)
+        ref_enc_f_1 = TimeDistributed(conv((1, 3), f"{prefix}_fconv_b_{l}" if prefix else None))(
+            original_ref_enc
+        )
+        if use_batch_norm:
+            original_ref_enc = TimeDistributed(
+                layer(BatchNormalization, name=f"{prefix}_fbn_b_{l}" if prefix else None)
+            )(ref_enc_f_1)
+        ref_enc_branch2 = layer(Concatenate, name=f"{prefix}_cat_b_{l}" if prefix else None)(
+            [ref_enc_t_1, ref_enc_f_1]
+        )
+        ref_enc = layer(Concatenate, name=f"{prefix}_cat_both_{l}" if prefix else None)(
+            [ref_enc, ref_enc_branch2]
+        )
+        ref_enc = TimeDistributed(conv((3, 3), f"{prefix}_joint_{l}" if prefix else None))(ref_enc)
+        if use_batch_norm:
+            ref_enc = TimeDistributed(
+                layer(BatchNormalization, name=f"{prefix}_joint_bn_{l}" if prefix else None)
+            )(ref_enc)
+        ref_enc = TimeDistributed(
+            layer(MaxPooling2D, (1, 2), name=f"{prefix}_pool_{l}" if prefix else None)
+        )(ref_enc)
+        filters_ref *= 2
+    return TimeDistributed(
+        layer(GlobalAveragePooling2D, name=f"{prefix}_gap" if prefix else None)
+    )(ref_enc)
+
+
+def encode_reference_segments(ref_x, filters_ref, num_layers, activation, use_batch_norm):
+    """Encode K fixed reference views sampled from the auxiliary utterance."""
+    ref_seq = _reference_conv_sequence(
+        ref_x, filters_ref, num_layers, activation, use_batch_norm, prefix=""
+    )
+    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=1, prefix="ref")
+    speaker_embed = attentive_pooling(ref_seq, name="speaker_att_pool")
+    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(speaker_embed)
+    ref_seq_mask = SequenceOnes(name="ref_seq_ones")(ref_seq)
+    return speaker_embed, ref_seq, ref_seq_mask
+
+
+def encode_reference_full(
+    ref_x, ref_mask, filters_ref, num_layers, activation, use_batch_norm, chunk_frames=128
+):
+    """Encode one full auxiliary spectrogram.
+
+    Long utterances are split into contiguous ``chunk_frames`` windows, in order.
+    Padded windows are masked out of the chunk sequence and the speaker pool.
+    """
+    ref_views, chunk_mask = ChunkFullReference(chunk_frames=chunk_frames, name="ref_full_chunk")(
+        [ref_x, ref_mask]
+    )
+    ref_seq = _reference_conv_sequence(
+        ref_views, filters_ref, num_layers, activation, use_batch_norm, prefix="ref_full"
+    )
+    ref_seq = ApplyChunkMask(name="ref_full_apply_mask")([ref_seq, chunk_mask])
+    ref_seq = add_xlstm_block(
+        ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=1, prefix="ref_full"
+    )
+    speaker_embed = MaskedAttentivePooling(name="speaker_att_pool")([ref_seq, chunk_mask])
+    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(speaker_embed)
+    return speaker_embed, ref_seq, chunk_mask
+
+
+@tf.keras.utils.register_keras_serializable()
+class SequenceOnes(Layer):
+    def call(self, sequence):
+        return tf.ones_like(sequence[..., 0])
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[:-1]
+
+
+@tf.keras.utils.register_keras_serializable()
+class AttentionMask(Layer):
+    """Broadcast a (batch, keys) mask to (batch, 1, keys) for multi-head attention."""
+
+    def call(self, mask):
+        mask = tf.cast(mask, tf.bool)
+        return tf.expand_dims(mask, axis=1)
+
+
+class TimeOnes(Layer):
+    """Ones over the time axis of a (batch, time, freq, channels) spectrogram."""
+
+    def call(self, spec):
+        ones = tf.ones([tf.shape(spec)[0], tf.shape(spec)[1]], dtype=spec.dtype)
+        if spec.shape[1] is not None:
+            ones.set_shape([None, spec.shape[1]])
+        return ones
+
+
+class STFTFrameSimilarity(Layer):
+    """SEF-PNet similarity: guidance = E @ softmax(E^T @ Y), per real and imag.
+
+    Padded enrollment frames are masked out of the softmax. The second half of
+    the returned channels is the masked enrollment mean, tiled over mixture time.
+    """
+
+    def call(self, inputs):
+        mix, enroll, mask = inputs
+        mix_f = tf.transpose(mix, [0, 2, 3, 1])
+        enr_f = tf.transpose(enroll, [0, 2, 3, 1])
+        guides = []
+        valid = tf.cast(mask, mix.dtype)
+        for channel in range(2):
+            enrollment = enr_f[:, :, channel, :]
+            mixture = mix_f[:, :, channel, :]
+            logits = tf.matmul(enrollment, mixture, transpose_a=True)
+            logits = logits + (valid[:, :, None] - 1.0) * 1e9
+            weights = tf.nn.softmax(logits, axis=1)
+            guides.append(tf.matmul(enrollment, weights))
+        guided = tf.transpose(tf.stack(guides, axis=-1), [0, 2, 1, 3])
+
+        valid_frames = valid[:, :, None, None]
+        denom = tf.reduce_sum(valid_frames, axis=1, keepdims=True) + 1e-8
+        mean = tf.reduce_sum(enroll * valid_frames, axis=1, keepdims=True) / denom
+        mixture_time = mix.shape[1]
+        if mixture_time is None:
+            mixture_time = tf.shape(mix)[1]
+        mean = tf.tile(mean, [1, mixture_time, 1, 1])
+
+        out = tf.concat([guided, mean], axis=-1)
+        if mix.shape[1] is not None and mix.shape[2] is not None:
+            out.set_shape([None, mix.shape[1], mix.shape[2], 4])
+        return out
+
+
+def enrollment_cross_attention(x, ref_seq, ref_seq_mask, name="enroll_xattn"):
+    """Each time-frequency bin attends over the enrollment chunk sequence."""
+    time, freq, channels = int(x.shape[1]), int(x.shape[2]), int(x.shape[3])
+    ref_dim = int(ref_seq.shape[-1])
+    queries = Dense(ref_dim, name=f"{name}_q")(x)
+    queries = Reshape((time * freq, ref_dim), name=f"{name}_q_flat")(queries)
+    attn_mask = AttentionMask(name=f"{name}_mask")(ref_seq_mask)
+    attended = MultiHeadAttention(num_heads=4, key_dim=32, name=name)(
+        query=queries, key=ref_seq, value=ref_seq, attention_mask=attn_mask
+    )
+    attended = Reshape((time, freq, ref_dim), name=f"{name}_unflat")(attended)
+    return Conv2D(channels, 1, padding="same", name=f"{name}_proj")(attended)
+
 
 def custom_unet(
     input_shape,
@@ -924,6 +1318,11 @@ def custom_unet(
     filters=16,
     num_layers=4,
     output_activation="sigmoid",
+    full_utterance=False,
+    ref_chunk_frames=128,
+    max_ref_frames=1280,
+    stft_interact=False,
+    segment_frames=256,
 ):
     if upsample_mode == "deconv":
         upsample = upsample_conv
@@ -931,200 +1330,193 @@ def custom_unet(
         upsample = upsample_simple
 
     main_input = Input(input_shape, name="noisy_main")  # (T, F, C)
-    ref_input = Input((4, 102, 256, 2), name="noisy_ref")
-    main_input_copy = ops.copy(main_input)
+    if full_utterance:
+        ref_input = Input((max_ref_frames, input_shape[1], input_shape[2]), name="noisy_ref")
+        ref_mask_input = Input((max_ref_frames,), name="ref_mask")
+        model_inputs = [main_input, ref_input, ref_mask_input]
+    else:
+        ref_input = Input((4, segment_frames, input_shape[1], input_shape[2]), name="noisy_ref")
+        ref_mask_input = None
+        model_inputs = [main_input, ref_input]
+    # Power-law magnitude compression, undone on the network output below.
+    x = PowerLawComplexSpec(factor=MAG_COMPRESS, name="compress_main")(main_input)
+    ref_x = PowerLawComplexSpec(factor=MAG_COMPRESS, name="compress_ref")(ref_input)
+    main_input_copy = x
 
-    x = main_input / (ops.std(main_input) + 1e-5)
-    ref_x = ref_input / (ops.std(ref_input) + 1e-5)
-    # plot the first element of the batch for both main and reference inputs
+    if stft_interact:
+        if full_utterance:
+            enroll, enroll_mask = ref_x, ref_mask_input
+        else:
+            views, frames, bins = int(ref_x.shape[1]), int(ref_x.shape[2]), int(ref_x.shape[3])
+            enroll = Reshape((views * frames, bins, 2), name="enroll_flat")(ref_x)
+            enroll_mask = TimeOnes(name="enroll_mask")(enroll)
+        sim_and_mean = STFTFrameSimilarity(name="stft_sim")([x, enroll, enroll_mask])
+        time_bins, freq_bins = int(x.shape[1]), int(x.shape[2])
+        guided = Reshape((time_bins, freq_bins, 2), name="stft_guided")(sim_and_mean[..., 0:2])
+        enroll_mean = Reshape((time_bins, freq_bins, 2), name="stft_mean")(sim_and_mean[..., 2:4])
+        guided = ASFFFusion(name="stft_asff")([guided, enroll_mean])
+        x = Concatenate(axis=-1, name="stft_fuse")([x, guided])
+
+    # Four stride-2 pools need both axes divisible by 16. The 8 ms hop does not
+    # land on that grid (497 x 129), so pad here and crop before the mask.
+    unet_multiple = 2 ** num_layers
+    spec_time, spec_freq = int(x.shape[1]), int(x.shape[2])
+    pad_time = (unet_multiple - spec_time % unet_multiple) % unet_multiple
+    pad_freq = (unet_multiple - spec_freq % unet_multiple) % unet_multiple
+    if pad_time or pad_freq:
+        x = ZeroPadding2D(padding=((0, pad_time), (0, pad_freq)), name="unet_pad")(x)
+
+    # Full-resolution guided map for the decoder, and the same map pooled onto
+    # the bottleneck grid for ASFF after the xLSTM.
+    guided_map = None
+    guided_bn = None
+    if stft_interact:
+        guided_map = guided
+        if pad_time or pad_freq:
+            guided_map = ZeroPadding2D(
+                padding=((0, pad_time), (0, pad_freq)), name="guided_pad"
+            )(guided_map)
+        guided_bn = guided_map
+        for level in range(num_layers):
+            guided_bn = AveragePooling2D((2, 2), name=f"guided_pool_{level}")(guided_bn)
 
     down_layers = []
     for l in range(num_layers):
         x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        x = eca_block(x, name=f"enc_eca_{l}")
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
         dropout += dropout_change_per_layer
-        filters = filters * 2
+        filters = int(filters * 1.5)
 
-    ref_enc = ref_x
-    filters_ref = filters // (2**num_layers)
-    for l in range(num_layers):
-        original_ref_enc = ref_enc
-        # first branch to obtain time using frequency
-        ref_enc_f = TimeDistributed(
-            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
-        )(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc_f)
-        # then look at the time dimension by applying a 3x1 convolution
-        ref_enc__t = TimeDistributed(
-            Conv2D(filters_ref, (5, 5), activation=activation, padding="same")
-        )(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc__t)
-        # concatenate them
-        ref_enc = Concatenate()([ref_enc_f, ref_enc__t])
-
-
-        # second branch to obtain frequency using time
-
-        ref_enc_t_1 = TimeDistributed(
-            Conv2D(filters_ref, (5, 5), activation=activation, padding="same")
-        )(original_ref_enc)
-
-        if use_batch_norm:
-            original_ref_enc = TimeDistributed(BatchNormalization())(ref_enc_t_1)
-
-        ref_enc_f_1 = TimeDistributed(
-            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
-        )(original_ref_enc)
-
-        if use_batch_norm:
-            original_ref_enc = TimeDistributed(BatchNormalization())(ref_enc_f_1)
-
-        # concatenate them second branch
-        ref_enc_branch2 = Concatenate()([ref_enc_t_1, ref_enc_f_1])
-
-        # now concatenate both branches to get a richer representation that captures both time and frequency interactions
-        ref_enc = Concatenate()([ref_enc, ref_enc_branch2])
-
-        # then look at both time and frequency with a 3x3 convolution
-        ref_enc = TimeDistributed(
-            Conv2D(filters_ref, (3, 3), activation=activation, padding="same")
-        )(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(BatchNormalization())(ref_enc)
-        ref_enc = TimeDistributed(MaxPooling2D((1, 2)))(ref_enc)
-        filters_ref *= 2
-
-    ref_seq = TimeDistributed(GlobalAveragePooling2D())(ref_enc)
-    # Apply GRU Block
-    # ref_seq = add_gru_block(
-    #     ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref"
-    # )
-    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=2, prefix="ref")
-    
-    # NEW: Attentive Pooling
-    speaker_embed = attentive_pooling(ref_seq, name="speaker_att_pool")
-    
-    # Optional: A final projection to stabilize the embedding
-    speaker_embed = layers.Dense(256, activation="tanh", name="speaker_final_proj")(speaker_embed)
-
-    T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]  # (24, 16, 256)
-
-    # 1. Flatten the spatial (F_small) and channel (C_small) dimensions
-    # Current x: (None, 24, 16, 256) -> Reshape to: (None, 24, 4096)
- # --- 1. Dimensionality Reduction (The "Compression") ---
-    # Instead of Reshape(4096), we reduce the depth (channels) to make it manageable
-    bottleneck_dim = 128 # Much more efficient than 512 or 4096
-    x_compressed = Conv2D(bottleneck_dim, (1, 1), padding="same", name="bn_depth_reduce")(x)
-
-    # --- 2. Temporal Processing Preparation ---
-    # Reshape to (Time, Frequency * Compressed_Channels) 
-    # Shape: (24, 16 * 128) = (24, 2048) -> Still high, but much better
-    x_seq = Reshape((T_small, F_small * bottleneck_dim))(x_compressed)
-
-    # --- 3. Speaker Injection (Residual Style) ---
-    # Project speaker embed to match the seq dimension
-    spk_proj = Dense(F_small * bottleneck_dim)(speaker_embed) # (None, 2048)
-    spk_proj = RepeatVector(T_small)(spk_proj)               # (None, 24, 2048)
-
-    # Add is often more stable than Concat for large feature vectors
-    x_seq = layers.Add(name="bn_spk_fusion")([x_seq, spk_proj])
-
-    x_seq = layers.LayerNormalization(name="bn_spk_norm")(x_seq)
-
-    # --- 4. The xLSTM Core ---
-    # Process the sequence with the xLSTM
-    x_seq = add_xlstm_block(x_seq, hidden_dim=512, num_layers=2, prefix="main_bottleneck")
-
-    # --- 5. Expansion & Reconstruction ---
-    # Map back to the compressed spatial shape
-    x_expanded = TimeDistributed(Dense(F_small * bottleneck_dim))(x_seq)
-    x_reshaped = Reshape((T_small, F_small, bottleneck_dim))(x_expanded)
-
-    # Restore original channel depth (C_small = 256)
-    x = Conv2D(C_small, (1, 1), padding="same", activation=activation, name="bn_reconstruct")(x_reshaped)
-
-    # Now proceed to FiLM and upsampling
-    spk_res = broadcast_speaker(speaker_embed, x)
-    x = ifi_block(x, spk_res, channels=x.shape[-1], name="bn_ifi")
-
-    if not use_dropout_on_upsampling:
-        dropout = 0.0
-        dropout_change_per_layer = 0.0
-    for conv in reversed(down_layers):
-        filters //= 2  # decreasing number of filters with each layer
-        dropout -= dropout_change_per_layer
-        x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
-        # Apply FiLM conditioning after upsampling but before concatenation
-        x = film(x, speaker_embed)
-        if use_attention:
-            x = attention_concat(conv_below=x, skip_connection=conv)
+    if not stft_interact:
+        filters_ref = filters // (2**num_layers)
+        if full_utterance:
+            speaker_embed, ref_seq, ref_seq_mask = encode_reference_full(
+                ref_x,
+                ref_mask_input,
+                filters_ref,
+                num_layers,
+                activation,
+                use_batch_norm,
+                chunk_frames=ref_chunk_frames,
+            )
         else:
-            x = concatenate([x, conv])
+            speaker_embed, ref_seq, ref_seq_mask = encode_reference_segments(
+                ref_x, filters_ref, num_layers, activation, use_batch_norm
+            )
 
-        spk_res_up = broadcast_speaker(speaker_embed, x)
-        x = ifi_block(x, spk_res_up, channels=x.shape[-1], name=f"up_ifi_{filters}")
+        x_film = film(x, speaker_embed)
+        attn_map = enrollment_cross_attention(x, ref_seq, ref_seq_mask, name="bn_enroll_xattn")
+        x = ASFFFusion(name="bn_asff")([x_film, attn_map])
+        x = eca_block(x, name="bn_eca")
+    T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]
+    x_seq = Reshape((T_small, F_small * C_small))(x)
+    x_seq = add_xlstm_block(x_seq, hidden_dim=128, num_layers=1, prefix="main_bottleneck")
+    x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
+    x_reshaped = Reshape((T_small, F_small, C_small))(x_expanded)
+    x = Conv2D(C_small, (1, 1), padding="same", activation=activation, name="bn_reconstruct")(x_reshaped)
+    if stft_interact:
+        guided_proj = Conv2D(int(x.shape[-1]), 1, padding="same", name="bn_guided_proj")(guided_bn)
+        x = ASFFFusion(name="bn_guided_asff")([x, guided_proj])
+    # if not use_dropout_on_upsampling:
+    #     dropout = 0.0
+    #     dropout_change_per_layer = 0.0
+    if stft_interact:
+        for conv in reversed(down_layers):
+            filters = conv.shape[-1]
+            x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
+            if use_attention:
+                x = attention_concat(conv_below=x, skip_connection=conv)
+            else:
+                x = concatenate([x, conv])
+            guided_here = Resizing(
+                int(x.shape[1]),
+                int(x.shape[2]),
+                interpolation="bilinear",
+                name=f"up_guided_{filters}",
+            )(guided_map)
+            x = Concatenate(axis=-1, name=f"up_guided_cat_{filters}")([x, guided_here])
+            x = tf_alternating_block(
+                x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}"
+            )
+    else:
+        spk_field = attn_map
+        for conv in reversed(down_layers):
+            filters = conv.shape[-1]
+            # dropout -= dropout_change_per_layer
+            x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
+            spk_field = UpSampling2D((2, 2), interpolation="bilinear", name=f"up_spk_{filters}")(spk_field)
+            x = film(x, speaker_embed)
+            if use_attention:
+                x = attention_concat(conv_below=x, skip_connection=conv)
+            else:
+                x = concatenate([x, conv])
 
-        x = conv2d_block(
-            inputs=x,
-            filters=filters,
-            use_batch_norm=use_batch_norm,
-            dropout=dropout,
-            dropout_type=dropout_type,
-            activation=activation,
-        )
-        # x = tf_alternating_block(x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}")
-    x = lca_block(x, channels=x.shape[-1], name="final_refinement")
-    # --- Split noisy input into real / imag ---
+            spk_res_up = Conv2D(
+                int(x.shape[-1]), 1, padding="same", name=f"up_spk_proj_{filters}"
+            )(spk_field)
+            x = ASFFFusion(name=f"up_asff_{filters}")([x, spk_res_up])
+            x = tf_alternating_block(x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}")
+    if pad_time or pad_freq:
+        x = Cropping2D(cropping=((0, pad_time), (0, pad_freq)), name="unet_crop")(x)
     input_r = main_input_copy[..., 0:1]
     input_i = main_input_copy[..., 1:2]
-
-    # --- Predict complex mask ---
-    # Kernel init "zeros" helps stability at start of training
     mask_r = Conv2D(1, (1, 1), activation=None, kernel_initializer="zeros", name="mask_real")(x)
     mask_i = Conv2D(1, (1, 1), activation=None, kernel_initializer="zeros", name="mask_imag")(x)
-
-    # --- Apply Learnable Scaling ---
     mask_r = LearnableScale(initial_value=2.0, name="scale_r")(mask_r)
     mask_i = LearnableScale(initial_value=2.0, name="scale_i")(mask_i)
-
-    # --- Complex multiplication ---
     out_r = layers.Subtract()([
         layers.Multiply()([mask_r, input_r]),
         layers.Multiply()([mask_i, input_i])
     ])
-
     out_i = layers.Add()([
         layers.Multiply()([mask_r, input_i]),
         layers.Multiply()([mask_i, input_r])
     ])
-
-    # --- Residual connection (very important) ---
     out_r = layers.Add()([input_r, out_r])
     out_i = layers.Add()([input_i, out_i])
 
-    # --- Merge back to 2-channel ---
+    # --- Merge back to 2-channel and undo magnitude compression ---
     outputs = Concatenate(axis=-1)([out_r, out_i])
+    outputs = PowerLawComplexSpec(factor=1.0 / MAG_COMPRESS, name="decompress_out")(outputs)
 
-    return Model(inputs=[main_input, ref_input], outputs=[outputs])
+    return Model(inputs=model_inputs, outputs=[outputs])
 
 
-model_filename = (
-    "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
-)
+model_filename = "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
+if args.l is not None:
+    model_filename = (
+        "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_"
+        + args.l.replace("-", "_")
+        + ".keras"
+    )
+if args.full_utterance:
+    model_filename = model_filename.replace(".keras", "_full_utterance.keras")
+model_filename = model_filename.replace(".keras", "_drc.keras")
+if args.stft_interact:
+    model_filename = model_filename.replace(".keras", "_stft.keras")
+model_filename = model_filename.replace(".keras", "_align.keras")
+model_filename = model_filename.replace(".keras", "_f50.keras")
+model_filename = model_filename.replace(".keras", "_bnifi.keras")
+model_filename = model_filename.replace(".keras", "_dcat.keras")
+model_filename = model_filename.replace(".keras", "_asff_eca.keras")
 model = custom_unet(
-    input_shape=(192, 256, 2),
+    input_shape=(N_FRAMES, N_BINS, 2),
     use_batch_norm=True,
     num_classes=2,
-    filters=32,
+    filters=50,
     use_dropout_on_upsampling=False,
     num_layers=4,
     use_attention=False,
     upsample_mode="deconv",
-    dropout=0.2,
+    dropout=0.3,
     output_activation="sigmoid",
+    full_utterance=args.full_utterance,
+    ref_chunk_frames=REF_CHUNK_FRAMES,
+    max_ref_frames=MAX_REF_FRAMES,
+    stft_interact=args.stft_interact,
+    segment_frames=REF_SEGMENT_FRAMES,
 )
 callbacks = [
     ModelCheckpoint(
@@ -1142,6 +1534,443 @@ callbacks = [
     #     verbose=1,
     # ),
 ]
+
+
+# Kolbaek, Tan, Jensen, Jensen, "On Loss Functions for Supervised Monaural
+# Time-Domain Speech Enhancement", IEEE/ACM TASLP, 2020.
+# The network predicts a complex spectrogram. These losses invert it with the
+# training STFT and apply the paper's waveform criteria.
+_STOI_FS = 10000
+_STOI_FRAME = 256
+_STOI_NFFT = 512
+_STOI_HOP = 128
+_STOI_N = 30
+_STOI_BETA = -15.0
+_STSA_FFT = 256
+_STSA_HOP = 128
+_STOI_OBM = tf.constant(thirdoct(_STOI_FS, _STOI_NFFT, 15, 150)[0], dtype=tf.float32)
+
+
+def _matlab_hann_window(window_length, dtype=tf.float32):
+    # np.hanning(window_length + 2)[1:-1], the analysis window used by STOI.
+    n = tf.range(1, window_length + 1, dtype=dtype)
+    return tf.cast(0.5, dtype) - tf.cast(0.5, dtype) * tf.cos(
+        tf.cast(2.0 * math.pi, dtype) * n / tf.cast(window_length + 1, dtype)
+    )
+
+
+def _spec_to_waveform(spec_2ch):
+    spec_2ch = spec_2ch[..., 0:2]
+    spectrum = tf.complex(spec_2ch[..., 0], spec_2ch[..., 1])
+    return _AUDIO_TOOLKIT.istft(spectrum)
+
+
+def _resample_8k_to_10k(wav):
+    length = tf.shape(wav)[1]
+    new_length = tf.cast(tf.round(tf.cast(length, tf.float32) * (_STOI_FS / TARGET_SR)), tf.int32)
+    image = wav[:, :, None, None]
+    resized = tf.image.resize(image, [new_length, 1], method="bilinear")
+    return resized[:, :, 0, 0]
+
+
+def _third_octave_envelopes(wav):
+    wav = _resample_8k_to_10k(wav)
+    spectrum = tf.signal.stft(
+        wav,
+        frame_length=_STOI_FRAME,
+        frame_step=_STOI_HOP,
+        fft_length=_STOI_NFFT,
+        window_fn=_matlab_hann_window,
+    )
+    band_energy = tf.matmul(tf.square(tf.abs(spectrum)), _STOI_OBM, transpose_b=True)
+    envelopes = tf.sqrt(band_energy + 1e-8)
+    return tf.transpose(envelopes, [0, 2, 1])
+
+
+def _envelope_segments(envelopes):
+    return tf.signal.frame(envelopes, _STOI_N, 1, axis=-1)
+
+
+def time_domain_mse(y_true, y_pred):
+    """Time-domain MSE, Kolbaek et al. Eq. (3)."""
+    target = _spec_to_waveform(y_true)
+    estimate = _spec_to_waveform(y_pred)
+    return tf.reduce_mean(tf.square(estimate - target))
+
+
+def stsa_mse(y_true, y_pred):
+    """Short-time spectral amplitude MSE, Kolbaek et al. Eq. (4). K=256, hop=128."""
+    target = _spec_to_waveform(y_true)
+    estimate = _spec_to_waveform(y_pred)
+
+    def amplitude(wav):
+        spectrum = tf.signal.stft(
+            wav,
+            frame_length=_STSA_FFT,
+            frame_step=_STSA_HOP,
+            fft_length=_STSA_FFT,
+            window_fn=_matlab_hann_window,
+        )
+        return tf.abs(spectrum)
+
+    return tf.reduce_mean(tf.square(amplitude(estimate) - amplitude(target)))
+
+
+def _intelligibility_stoi(y_true, y_pred):
+    target = _envelope_segments(_third_octave_envelopes(_spec_to_waveform(y_true)))
+    estimate = _envelope_segments(_third_octave_envelopes(_spec_to_waveform(y_pred)))
+    target_norm = tf.sqrt(tf.reduce_sum(tf.square(target), axis=-1, keepdims=True) + 1e-8)
+    estimate_norm = tf.sqrt(tf.reduce_sum(tf.square(estimate), axis=-1, keepdims=True) + 1e-8)
+    estimate = estimate * (target_norm / estimate_norm)
+    clip = 1.0 + 10 ** (-_STOI_BETA / 20.0)
+    estimate = tf.minimum(estimate, target * clip)
+    target = target - tf.reduce_mean(target, axis=-1, keepdims=True)
+    estimate = estimate - tf.reduce_mean(estimate, axis=-1, keepdims=True)
+    target = target / tf.sqrt(tf.reduce_sum(tf.square(target), axis=-1, keepdims=True) + 1e-8)
+    estimate = estimate / tf.sqrt(tf.reduce_sum(tf.square(estimate), axis=-1, keepdims=True) + 1e-8)
+    return tf.reduce_mean(tf.reduce_sum(target * estimate, axis=-1))
+
+
+def _row_col_normalize(segments):
+    segments = segments - tf.reduce_mean(segments, axis=-1, keepdims=True)
+    segments = segments / tf.sqrt(tf.reduce_sum(tf.square(segments), axis=-1, keepdims=True) + 1e-8)
+    segments = segments - tf.reduce_mean(segments, axis=-2, keepdims=True)
+    segments = segments / tf.sqrt(tf.reduce_sum(tf.square(segments), axis=-2, keepdims=True) + 1e-8)
+    return segments
+
+
+def _intelligibility_estoi(y_true, y_pred):
+    target = _envelope_segments(_third_octave_envelopes(_spec_to_waveform(y_true)))
+    estimate = _envelope_segments(_third_octave_envelopes(_spec_to_waveform(y_pred)))
+    # (batch, bands, segments, frames) -> (batch, segments, bands, frames)
+    target = tf.transpose(target, [0, 2, 1, 3])
+    estimate = tf.transpose(estimate, [0, 2, 1, 3])
+    target = _row_col_normalize(target)
+    estimate = _row_col_normalize(estimate)
+    column_dots = tf.reduce_sum(target * estimate, axis=[2, 3]) / tf.cast(_STOI_N, tf.float32)
+    return tf.reduce_mean(column_dots)
+
+
+def stoi_loss(y_true, y_pred):
+    """Negative STOI, Kolbaek et al. Eq. (10). Voice-activity detection is omitted."""
+    return -_intelligibility_stoi(y_true, y_pred)
+
+
+def estoi_loss(y_true, y_pred):
+    """Negative ESTOI, Kolbaek et al. Eq. (16)."""
+    return -_intelligibility_estoi(y_true, y_pred)
+
+
+def si_sdr_loss(y_true, y_pred, eps=1e-8):
+    """Negative SI-SDR, Kolbaek et al. Eq. (20). Both signals are zero-mean.
+
+    When the label carries a third channel, that channel is the number of real
+    samples in the chunk. Padded samples are zeroed on both waveforms first,
+    matching SEF-PNet's valid_len mask.
+    """
+    target = _spec_to_waveform(y_true)
+    estimate = _spec_to_waveform(y_pred)
+    if y_true.shape[-1] == 3:
+        valid_len = tf.cast(tf.round(y_true[:, 0, 0, 2]), tf.int32)
+        positions = tf.range(tf.shape(target)[-1])
+        sample_mask = tf.cast(positions[None, :] < valid_len[:, None], target.dtype)
+        target = target * sample_mask
+        estimate = estimate * sample_mask
+    target = target - tf.reduce_mean(target, axis=-1, keepdims=True)
+    estimate = estimate - tf.reduce_mean(estimate, axis=-1, keepdims=True)
+    dot = tf.reduce_sum(estimate * target, axis=-1, keepdims=True)
+    target_energy = tf.reduce_sum(tf.square(target), axis=-1, keepdims=True)
+    projection = dot * target / (target_energy + eps)
+    noise = estimate - projection
+    ratio = (tf.reduce_sum(tf.square(projection), axis=-1) + eps) / (
+        tf.reduce_sum(tf.square(noise), axis=-1) + eps
+    )
+    si_sdr = 10.0 * tf.math.log(ratio) / tf.math.log(10.0)
+    return -tf.reduce_mean(si_sdr)
+
+
+# PMSQE at 8 kHz (Martin-Donas et al., IEEE SPL 2018), the setting used by Kolbaek et al.
+_PMSQE_FFT = 256
+_PMSQE_HOP = 128
+_PMSQE_ALPHA = 0.1
+_PMSQE_BETA = 0.309 * _PMSQE_ALPHA
+_PMSQE_SL = 1.866055e-1
+_PMSQE_ABS_THRESH = tf.constant(
+    [
+        51286152.0,
+        2454709.500,
+        70794.593750,
+        4897.788574,
+        1174.897705,
+        389.045166,
+        104.712860,
+        45.708820,
+        17.782795,
+        9.772372,
+        4.897789,
+        3.090296,
+        1.905461,
+        1.258925,
+        0.977237,
+        0.724436,
+        0.562341,
+        0.457088,
+        0.389045,
+        0.331131,
+        0.295121,
+        0.269153,
+        0.257040,
+        0.251189,
+        0.251189,
+        0.251189,
+        0.251189,
+        0.263027,
+        0.288403,
+        0.309030,
+        0.338844,
+        0.371535,
+        0.398107,
+        0.436516,
+        0.467735,
+        0.489779,
+        0.501187,
+        0.501187,
+        0.512861,
+        0.524807,
+        0.524807,
+        0.524807,
+    ],
+    dtype=tf.float32,
+)
+_PMSQE_ZWICKER = tf.constant(
+    [
+        0.25520097857560436,
+        0.25520097857560436,
+        0.25520097857560436,
+        0.25520097857560436,
+        0.25168783742879913,
+        0.24806665731869609,
+        0.244767379124259,
+        0.24173800119368227,
+        0.23893798876066405,
+        0.23633516221479894,
+        0.23390360348392067,
+        0.23162209128929445,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+        0.23,
+    ],
+    dtype=tf.float32,
+)
+_PMSQE_WIDTH = tf.constant(
+    [
+        0.157344,
+        0.317994,
+        0.322441,
+        0.326934,
+        0.331474,
+        0.336061,
+        0.340697,
+        0.345381,
+        0.350114,
+        0.354897,
+        0.359729,
+        0.364611,
+        0.369544,
+        0.374529,
+        0.379565,
+        0.384653,
+        0.389794,
+        0.394989,
+        0.400236,
+        0.405538,
+        0.410894,
+        0.416306,
+        0.421773,
+        0.427297,
+        0.432877,
+        0.438514,
+        0.444209,
+        0.449962,
+        0.455774,
+        0.461645,
+        0.467577,
+        0.473569,
+        0.479621,
+        0.485736,
+        0.491912,
+        0.498151,
+        0.504454,
+        0.510819,
+        0.517250,
+        0.523745,
+        0.530308,
+        0.536934,
+    ],
+    dtype=tf.float32,
+)
+_PMSQE_SQRT_WIDTH = tf.sqrt(tf.reduce_sum(_PMSQE_WIDTH))
+_PMSQE_BARK = tf.constant(
+    np.frombuffer(
+        zlib.decompress(
+            base64.b64decode(
+                "eNrt2c0qxFEYx/FDM8gVWNvaSNnrV0osLNjYWxBlM2PrvRg1pSmapVLKRlPuwaxE2VFWZmNjJ5G/zi2MZ+o8zvd7BZ+ezkunE0JbwUlFcevGGhzNtQ9rT+pnb/Wkb0fWwTAjnPmerZ7Wqqfz6tPRXIcczXVyfFE4bRsIz26sna83R/fArnDaNnFwJJy2fRTHwmlb/akunLaVw6lw2nZ/3RRO20rv58Jp28NsSzhtG61uCWd+zlht/lA483PGNkdOhDM/Z2xj7Ew483PG5vZXhRNnyj12fLxJcNpXmd4WTpwpV64tCSdOnH/v7qIhnDhTrv3i427CiTP1WjfrwokTZx7O2OvwnnDixJmHM7bWrAonTpw4U2unsSKcOHHixNldl6Vl4cSJEyfO/+uMXU35+F/AiRMnTpzdt/Dj418JJ06cOHHiTKVfSbLdIA=="
+            )
+        ),
+        dtype=np.float32,
+    ).reshape(129, 42)
+)
+_PMSQE_SLL_MASK = tf.constant(
+    np.concatenate(
+        [
+            np.zeros(11, dtype=np.float32),
+            np.array([0.5 * 25.0 / 31.25], dtype=np.float32),
+            np.ones(92, dtype=np.float32),
+            np.array([0.5], dtype=np.float32),
+            np.zeros(24, dtype=np.float32),
+        ]
+    )
+    * np.float32(2.666666666666754 * (256.0 + 2.0) / 256.0**2),
+    dtype=tf.float32,
+)
+
+
+def _pmsqe_power(wav):
+    spectrum = tf.signal.stft(
+        wav,
+        frame_length=_PMSQE_FFT,
+        frame_step=_PMSQE_HOP,
+        fft_length=_PMSQE_FFT,
+        window_fn=tf.signal.hann_window,
+    )
+    return tf.square(tf.abs(spectrum))
+
+
+def _pmsqe_at_sll(spectra):
+    masked = spectra * _PMSQE_SLL_MASK
+    freq_mean = tf.reduce_mean(masked, axis=-1, keepdims=True)
+    mean_power = tf.reduce_mean(freq_mean, axis=-2, keepdims=True)
+    return 10000000.0 * spectra / (mean_power + 1e-8)
+
+
+def _pmsqe_audible_power(bark_spectra, factor):
+    threshold = _PMSQE_ABS_THRESH * factor
+    audible = tf.where(bark_spectra > threshold, bark_spectra, tf.zeros_like(bark_spectra))
+    return tf.reduce_sum(audible, axis=-1, keepdims=True)
+
+
+def _pmsqe_frequency_equalization(reference, degraded):
+    active = _pmsqe_audible_power(reference, 100.0) >= 1.0e7
+    above = reference >= _PMSQE_ABS_THRESH * 100.0
+    reference_bands = tf.where(above, reference, tf.zeros_like(reference))
+    degraded_bands = tf.where(above, degraded, tf.zeros_like(degraded))
+    reference_power = tf.reduce_sum(
+        tf.where(active, reference_bands, tf.zeros_like(reference_bands)), axis=-2, keepdims=True
+    )
+    degraded_power = tf.reduce_sum(
+        tf.where(active, degraded_bands, tf.zeros_like(degraded_bands)), axis=-2, keepdims=True
+    )
+    equalizer = (reference_power + 1000.0) / (degraded_power + 1000.0)
+    equalizer = tf.clip_by_value(equalizer, 0.01, 100.0)
+    return equalizer * degraded
+
+
+def _pmsqe_gain_equalization(reference, degraded):
+    gain = (_pmsqe_audible_power(reference, 1.0) + 5.0e3) / (
+        _pmsqe_audible_power(degraded, 1.0) + 5.0e3
+    )
+    gain = tf.clip_by_value(gain, 3.0e-4, 5.0)
+    return gain * degraded
+
+
+def _pmsqe_loudness(bark_spectra):
+    loudness = _PMSQE_SL * tf.pow(_PMSQE_ABS_THRESH / 0.5, _PMSQE_ZWICKER) * (
+        tf.pow(
+            0.5 + 0.5 * bark_spectra / _PMSQE_ABS_THRESH,
+            _PMSQE_ZWICKER,
+        )
+        - 1.0
+    )
+    return tf.where(bark_spectra < _PMSQE_ABS_THRESH, tf.zeros_like(loudness), loudness)
+
+
+def _pmsqe_from_power(reference_power, degraded_power):
+    reference = _pmsqe_at_sll(reference_power)
+    degraded = _pmsqe_at_sll(degraded_power)
+    reference = 2.764344e-5 * tf.matmul(reference, _PMSQE_BARK)
+    degraded = 2.764344e-5 * tf.matmul(degraded, _PMSQE_BARK)
+    degraded = _pmsqe_frequency_equalization(reference, degraded)
+    degraded = _pmsqe_gain_equalization(reference, degraded)
+    reference_loudness = _pmsqe_loudness(reference)
+    degraded_loudness = _pmsqe_loudness(degraded)
+    difference = tf.abs(degraded_loudness - reference_loudness)
+    masking = 0.25 * tf.minimum(reference_loudness, degraded_loudness)
+    symmetric = tf.maximum(difference - masking, 1e-8)
+    asymmetry = tf.pow((degraded + 50.0) / (reference + 50.0), 1.2)
+    asymmetry = tf.where(asymmetry < 3.0, tf.zeros_like(asymmetry), tf.minimum(asymmetry, 12.0))
+    asymmetric = asymmetry * symmetric
+    symmetric_frame = tf.sqrt(
+        tf.reduce_sum(tf.square(symmetric * _PMSQE_WIDTH) + 1e-8, axis=-1, keepdims=True)
+    )
+    symmetric_frame = symmetric_frame * _PMSQE_SQRT_WIDTH
+    asymmetric_frame = tf.reduce_sum(asymmetric * _PMSQE_WIDTH, axis=-1, keepdims=True)
+    audible = _pmsqe_audible_power(reference, 1.0)
+    weights = tf.pow((audible + 1e5) / 1e7, 0.04)
+    symmetric_frame = tf.minimum(symmetric_frame / weights, 45.0)
+    asymmetric_frame = tf.minimum(asymmetric_frame / weights, 45.0)
+    return tf.reduce_mean(_PMSQE_ALPHA * symmetric_frame + _PMSQE_BETA * asymmetric_frame)
+
+
+def pmsqe_loss(y_true, y_pred):
+    """Perceptual metric for speech quality evaluation at 8 kHz."""
+    target = _pmsqe_power(_spec_to_waveform(y_true))
+    estimate = _pmsqe_power(_spec_to_waveform(y_pred))
+    return _pmsqe_from_power(target, estimate)
+
+
+LOSS_FUNCTIONS = {
+    "time-mse": time_domain_mse,
+    "stsa-mse": stsa_mse,
+    "stoi": stoi_loss,
+    "estoi": estoi_loss,
+    "si-sdr": si_sdr_loss,
+    "pmsqe": pmsqe_loss,
+}
+LOSS_LABELS = {
+    "time-mse": "Time-Domain Mean Square Error",
+    "stsa-mse": "Short-Time Spectral Amplitude Mean Square Error",
+    "stoi": "Short-Time Objective Intelligibility",
+    "estoi": "Extended Short-Time Objective Intelligibility",
+    "si-sdr": "Scale-Invariant Signal-to-Distortion Ratio",
+    "pmsqe": "Perceptual Metric for Speech Quality Evaluation",
+}
 
 
 def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
@@ -1193,96 +2022,7 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
             2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
 
 
-total_steps = steps_per_epoch * EPOCHS
-warmup_steps = steps_per_epoch * 10
-initial_lr = 1e-4
-alpha = 0.05  # final lr fraction
-
-
-class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, initial_lr, total_steps, warmup_steps, alpha=0.0):
-        self.initial_lr = initial_lr
-        self.total_steps = total_steps
-        self.warmup_steps = warmup_steps
-        self.alpha = alpha
-
-    def __call__(self, step):
-        step = tf.cast(step, tf.float32)
-        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
-        total_steps = tf.cast(self.total_steps, tf.float32)
-
-        def warmup_lr():
-            return self.initial_lr * step / warmup_steps
-
-        def decay_lr():
-            progress = (step - warmup_steps) / (total_steps - warmup_steps)
-            progress = tf.clip_by_value(progress, 0.0, 1.0)
-            cosine_decay = 0.5 * (1 + tf.cos(tf.constant(math.pi) * progress))
-            decayed = (1 - self.alpha) * cosine_decay + self.alpha
-            return self.initial_lr * decayed
-
-        return tf.cond(step < warmup_steps, warmup_lr, decay_lr)
-
-    def get_config(self):
-        return {
-            "initial_lr": self.initial_lr,
-            "total_steps": self.total_steps,
-            "warmup_steps": self.warmup_steps,
-            "alpha": self.alpha,
-        }
-
-
-class LrLogger(tf.keras.callbacks.Callback):
-    def on_epoch_end(self, epoch, logs=None):
-        lr = self.model.optimizer.learning_rate
-        if isinstance(lr, tf.keras.optimizers.schedules.LearningRateSchedule):
-            lr = lr(tf.cast(self.model.optimizer.iterations, tf.float32))
-        print(f"Epoch {epoch+1}: Learning rate = {lr.numpy():.6f}")
-
-
-lr_schedule = WarmupCosineDecay(
-    initial_lr=initial_lr,
-    total_steps=total_steps,
-    warmup_steps=warmup_steps,
-    alpha=alpha,
-)
-
-optimizer = tf.keras.optimizers.Adam(
-    learning_rate=lr_schedule, weight_decay=5e-6, clipnorm=1.0
-)
-
 model.summary()
-
-model.compile(optimizer=optimizer, loss=complex_enhancement_loss_pc)
-
-history = model.fit(
-    train_dataset,
-    epochs=EPOCHS,
-    steps_per_epoch=steps_per_epoch,
-    # validation_data=val_dataset,
-    # validation_steps=validation_steps,
-    callbacks=callbacks,
-)
-
-
-# Evaluate the model on test set
-model.load_weights(
-    "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
-)
-# model.trainable = False
-# print("Model loaded for inference")
-
-# load the keras model for inference
-# model = tf.keras.models.load_model(
-#     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras",
-#     custom_objects={
-#         "sLSTMCell": sLSTMCell,
-#         "mLSTMCell": mLSTMCell,
-#         "complex_enhancement_loss_pc": complex_enhancement_loss_pc,
-#     }
-# )
-model.trainable = False
-print("Model loaded for inference")
 
 
 SR = 8000
@@ -1304,7 +2044,11 @@ def sample_reference_segments_full(wav, K, segment_len):
     return _WAVEFORM_ENHANCER.sample_reference_segments_full(wav, K, segment_len)
 
 
-def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.875):
+def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
+    if args.full_utterance:
+        return _WAVEFORM_ENHANCER.enhance_audio_full_utterance(
+            noisy_wav, ref_wav, model, overlap=overlap, max_ref_frames=MAX_REF_FRAMES
+        )
     return _WAVEFORM_ENHANCER.enhance_audio_consistent(
         noisy_wav, ref_wav, model, K=K, overlap=overlap
     )
@@ -1416,4 +2160,53 @@ def main():
 
 
 # ==========================================================
-main()
+if args.l is None:
+    eval_weights = "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr.keras"
+    if args.full_utterance:
+        eval_weights = eval_weights.replace(".keras", "_full_utterance.keras")
+    eval_weights = eval_weights.replace(".keras", "_drc.keras")
+    if args.stft_interact:
+        eval_weights = eval_weights.replace(".keras", "_stft.keras")
+    eval_weights = eval_weights.replace(".keras", "_align.keras")
+    eval_weights = eval_weights.replace(".keras", "_f50.keras")
+    eval_weights = eval_weights.replace(".keras", "_bnifi.keras")
+    eval_weights = eval_weights.replace(".keras", "_dcat.keras")
+    eval_weights = eval_weights.replace(".keras", "_asff_eca.keras")
+    model.load_weights(eval_weights)
+    model.trainable = False
+    print("Model loaded for inference")
+    main()
+else:
+    if not args.full_utterance:
+        raise SystemExit(
+            "The SEF-PNet trainer feeds the whole enrollment utterance. "
+            "Pass --full-utterance."
+        )
+    from libri2mix.conf_unet_tse_32ms import chunk_size, dev_data, train_data, trainer_conf
+    from libri2mix.dataset_tse import make_dataloader
+    from libri2mix.trainer_tse import SiSnrTrainer, chunk_frames_match
+
+    if not chunk_frames_match(chunk_size, frame_length, frame_step, N_FRAMES):
+        raise SystemExit(
+            f"Chunk STFT frames {conv_stft_frames(chunk_size, frame_length, frame_step)} "
+            f"do not match the model input {N_FRAMES}."
+        )
+    print(f"Training with SEF-PNet SiSnrTrainer ({LOSS_LABELS[args.l]})")
+    print(f"Checkpoint: {model_filename}")
+    print(f"Adam lr={trainer_conf['optimizer_kwargs']['lr']}, batch {batch_size}, epochs {EPOCHS}")
+    trainer = SiSnrTrainer(
+        model,
+        _AUDIO_TOOLKIT,
+        MAX_REF_FRAMES,
+        model_filename,
+        logging_period=trainer_conf["logging_period"],
+    )
+    trainer.run(
+        make_dataloader(
+            train=True, data_kwargs=train_data, chunk_size=chunk_size, batch_size=batch_size
+        ),
+        make_dataloader(
+            train=False, data_kwargs=dev_data, chunk_size=chunk_size, batch_size=batch_size
+        ),
+        num_epochs=EPOCHS,
+    )

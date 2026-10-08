@@ -101,6 +101,17 @@ def configure_optimization(
             global_clipnorm=clip_norm # Strongly preserves gradient paths safely across architectures
         )
 
+    elif optimizer_name == "adam":
+        # Decoupled AdamW with deep learning stability hyper-parameters
+        return tf.keras.optimizers.Adam(
+            learning_rate=lr_schedule,
+            weight_decay=weight_decay,
+            beta_1=0.9,
+            beta_2=0.98,       # 0.98 optimized for Sequence models / Attention variants
+            epsilon=1e-8,
+            global_clipnorm=clip_norm # Strongly preserves gradient paths safely across architectures
+        )
+
     elif optimizer_name == "lion":
         # Google's Evo-optimizer: 3x less memory overhead, strict vector adjustments
         # CRITICAL ADVICE: If switching to Lion, reduce your base_lr by roughly 3x to 5x!

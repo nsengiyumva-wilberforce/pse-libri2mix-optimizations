@@ -1,3 +1,5 @@
 __pycache__
 data
+libri2mix/__pycache__/*
+*.keras
 

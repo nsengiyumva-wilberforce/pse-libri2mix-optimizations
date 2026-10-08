@@ -1,448 +1,1234 @@
-Epoch 1: val_loss improved from None to 2.15734, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 1: Learning rate = 0.000003
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2349s 151ms/step - loss: 12.6265 - val_loss: 2.1573
-Epoch 2/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: 0.81212026-04-24 19:41:57.498828: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
-	 [[{{node IteratorGetNext}}]]
-
-Epoch 2: val_loss improved from 2.15734 to -0.86517, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 2: Learning rate = 0.000007
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2221s 148ms/step - loss: -0.1541 - val_loss: -0.8652
-Epoch 3/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -1.9260   
-Epoch 3: val_loss improved from -0.86517 to -2.29704, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 3: Learning rate = 0.000010
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2222s 148ms/step - loss: -2.9191 - val_loss: -2.2970
-Epoch 4/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -4.19242026-04-24 20:56:02.776149: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
-	 [[{{node IteratorGetNext}}]]
-
-Epoch 4: val_loss improved from -2.29704 to -2.49025, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 4: Learning rate = 0.000013
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2223s 148ms/step - loss: -4.9388 - val_loss: -2.4903
-Epoch 5/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -5.7120   
-Epoch 5: val_loss improved from -2.49025 to -2.97911, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 5: Learning rate = 0.000017
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2223s 148ms/step - loss: -6.3667 - val_loss: -2.9791
-Epoch 6/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -7.0130   
-Epoch 6: val_loss improved from -2.97911 to -5.79866, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 6: Learning rate = 0.000020
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2224s 148ms/step - loss: -7.6198 - val_loss: -5.7987
-Epoch 7/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -8.1044   
-Epoch 7: val_loss improved from -5.79866 to -6.78486, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 7: Learning rate = 0.000023
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2223s 148ms/step - loss: -8.7060 - val_loss: -6.7849
-Epoch 8/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -9.07882026-04-24 23:24:14.716833: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
-	 [[{{node IteratorGetNext}}]]
-
-Epoch 8: val_loss improved from -6.78486 to -7.59723, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 8: Learning rate = 0.000027
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2223s 148ms/step - loss: -9.7307 - val_loss: -7.5972
-Epoch 9/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -10.0703   
-Epoch 9: val_loss did not improve from -7.59723
-Epoch 9: Learning rate = 0.000030
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2220s 148ms/step - loss: -10.6192 - val_loss: -7.3161
-Epoch 10/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -10.9520   
-Epoch 10: val_loss improved from -7.59723 to -8.15841, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 10: Learning rate = 0.000033
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2224s 148ms/step - loss: -11.5088 - val_loss: -8.1584
-Epoch 11/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -11.7052   
-Epoch 11: val_loss did not improve from -8.15841
-Epoch 11: Learning rate = 0.000037
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2229s 148ms/step - loss: -12.2938 - val_loss: -6.1936
-Epoch 12/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -12.4901   
-Epoch 12: val_loss improved from -8.15841 to -8.15965, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 12: Learning rate = 0.000040
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2233s 149ms/step - loss: -13.1046 - val_loss: -8.1597
-Epoch 13/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -13.3662   
-Epoch 13: val_loss did not improve from -8.15965
-Epoch 13: Learning rate = 0.000043
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2228s 148ms/step - loss: -13.8729 - val_loss: -7.8641
-Epoch 14/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -13.9966   
-Epoch 14: val_loss did not improve from -8.15965
-Epoch 14: Learning rate = 0.000047
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2222s 148ms/step - loss: -14.5270 - val_loss: -7.8831
-Epoch 15/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -14.6993   
-Epoch 15: val_loss improved from -8.15965 to -10.32132, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 15: Learning rate = 0.000050
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2224s 148ms/step - loss: -15.2495 - val_loss: -10.3213
-Epoch 16/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -15.42092026-04-25 04:20:55.554399: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
-	 [[{{node IteratorGetNext}}]]
-
-Epoch 16: val_loss did not improve from -10.32132
-Epoch 16: Learning rate = 0.000053
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2221s 148ms/step - loss: -16.0249 - val_loss: -10.1663
-Epoch 17/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -16.2274   
-Epoch 17: val_loss improved from -10.32132 to -11.11805, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 17: Learning rate = 0.000057
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2222s 148ms/step - loss: -16.7543 - val_loss: -11.1180
-Epoch 18/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -16.7695   
-Epoch 18: val_loss did not improve from -11.11805
-Epoch 18: Learning rate = 0.000060
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2221s 148ms/step - loss: -17.3408 - val_loss: -10.9246
-Epoch 19/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -17.3586   
-Epoch 19: val_loss improved from -11.11805 to -11.48615, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 19: Learning rate = 0.000063
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2223s 148ms/step - loss: -17.9156 - val_loss: -11.4861
-Epoch 20/300
- 7046/15001 ━━━━━━━━━━━━━━━━━━━━ 19:14 145ms/step - loss: -17.6878//
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -17.9779   
-Epoch 20: val_loss improved from -11.48615 to -11.51459, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 20: Learning rate = 0.000067
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2211s 147ms/step - loss: -18.4684 - val_loss: -11.5146
-Epoch 21/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 143ms/step - loss: -18.3778   
-Epoch 21: val_loss improved from -11.51459 to -11.55701, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 21: Learning rate = 0.000070
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2193s 146ms/step - loss: -18.9758 - val_loss: -11.5570
-Epoch 22/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 143ms/step - loss: -18.8563   
-Epoch 22: val_loss improved from -11.55701 to -12.35145, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 22: Learning rate = 0.000073
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2194s 146ms/step - loss: -19.3966 - val_loss: -12.3515
-Epoch 23/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 143ms/step - loss: -19.3577   
-Epoch 23: val_loss improved from -12.35145 to -12.39337, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 23: Learning rate = 0.000077
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2198s 146ms/step - loss: -19.8685 - val_loss: -12.3934
-Epoch 24/300
-12430/15001 ━━━━━━━━━━━━━━━━━━━━ 6:12 145ms/step - loss: -19.6309 
-12431/15001 ━━━━━━━━━━━━━━━━━━━━ 6:12 145ms/step - loss: -19.6309
-12436/15001 ━━━━━━━━━━━━━━━━━━━━ 6:12 145ms/step - loss: -19.6311
-12439/15001 ━━━━━━━━━━━━━━━━━━━━ 6:11 145ms/step - loss: -19.6312
-12457/15001 ━━━━━━━━━━━━━━━━━━━━ 6:08 145ms/step - loss: -19.6319/
-12489/15001 ━━━━━━━━━━━━━━━━━━━━ 6:04 145ms/step - loss: -19.6331/
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -19.7270  
-Epoch 24: val_loss improved from -12.39337 to -12.80432, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 24: Learning rate = 0.000080
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2234s 149ms/step - loss: -20.2680 - val_loss: -12.8043
-Epoch 25/300
-  184/15001 ━━━━━━━━━━━━━━━━━━━━ 36:31 148ms/step - loss: -18.7153
-  188/15001 ━━━━━━━━━━━━━━━━━━━━ 36:31 148ms/step - loss: -18.7277
-  191/15001 ━━━━━━━━━━━━━━━━━━━━ 36:30 148ms/step - loss: -18.7364
-  194/15001 ━━━━━━━━━━━━━━━━━━━━ 36:30 148ms/step - loss: -18.7456
-  197/15001 ━━━━━━━━━━━━━━━━━━━━ 36:29 148ms/step - loss: -18.7544
-  200/15001 ━━━━━━━━━━━━━━━━━━━━ 36:28 148ms/step - loss: -18.7629
-  202/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -18.7689
-  205/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -18.7775
-  207/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -18.7830
-  219/15001 ━━━━━━━━━━━━━━━━━━━━ 36:26 148ms/step - loss: -18.8118/
-  229/15001 ━━━━━━━━━━━━━━━━━━━━ 36:24 148ms/step - loss: -18.8354/
-  236/15001 ━━━━━━━━━━━━━━━━━━━━ 36:24 148ms/step - loss: -18.8520/
-  248/15001 ━━━━━━━━━━━━━━━━━━━━ 36:25 148ms/step - loss: -18.8835/
-  254/15001 ━━━━━━━━━━━━━━━━━━━━ 36:24 148ms/step - loss: -18.8991
-  263/15001 ━━━━━━━━━━━━━━━━━━━━ 36:22 148ms/step - loss: -18.9195/
- 1483/15001 ━━━━━━━━━━━━━━━━━━━━ 33:16 148ms/step - loss: -19.7093
- 1488/15001 ━━━━━━━━━━━━━━━━━━━━ 33:15 148ms/step - loss: -19.7102
- 1492/15001 ━━━━━━━━━━━━━━━━━━━━ 33:15 148ms/step - loss: -19.7109
- 1495/15001 ━━━━━━━━━━━━━━━━━━━━ 33:14 148ms/step - loss: -19.7114
- 1499/15001 ━━━━━━━━━━━━━━━━━━━━ 33:14 148ms/step - loss: -19.7121
- 1502/15001 ━━━━━━━━━━━━━━━━━━━━ 33:13 148ms/step - loss: -19.7126
- 1516/15001 ━━━━━━━━━━━━━━━━━━━━ 33:11 148ms/step - loss: -19.7150/
- 1523/15001 ━━━━━━━━━━━━━━━━━━━━ 33:10 148ms/step - loss: -19.7161
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 147ms/step - loss: -20.1374   
-Epoch 25: val_loss did not improve from -12.80432
-Epoch 25: Learning rate = 0.000083
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2254s 150ms/step - loss: -20.5961 - val_loss: -12.8019
-Epoch 26/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -20.4864   
-Epoch 26: val_loss improved from -12.80432 to -13.01429, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 26: Learning rate = 0.000087
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2217s 148ms/step - loss: -20.9586 - val_loss: -13.0143
-Epoch 27/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -20.8868   
-Epoch 27: val_loss did not improve from -13.01429
-Epoch 27: Learning rate = 0.000090
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2216s 148ms/step - loss: -21.3359 - val_loss: -12.3819
-Epoch 28/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -21.2004   
-Epoch 28: val_loss did not improve from -13.01429
-Epoch 28: Learning rate = 0.000093
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2215s 148ms/step - loss: -21.6399 - val_loss: -12.4495
-Epoch 29/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -21.4576   
-Epoch 29: val_loss did not improve from -13.01429
-Epoch 29: Learning rate = 0.000097
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2215s 148ms/step - loss: -21.9178 - val_loss: -12.1907
-Epoch 30/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -21.7663   
-Epoch 30: val_loss did not improve from -13.01429
-Epoch 30: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2218s 148ms/step - loss: -22.1675 - val_loss: -12.8043
-Epoch 31/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -22.0204   
-Epoch 31: val_loss improved from -13.01429 to -13.36571, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 31: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 147ms/step - loss: -22.4994 - val_loss: -13.3657
-Epoch 32/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -22.38652026-04-25 14:11:54.570368: I tensorflow/core/framework/local_rendezvous.cc:407] Local rendezvous is aborting with status: OUT_OF_RANGE: End of sequence
-	 [[{{node IteratorGetNext}}]]
-
-Epoch 32: val_loss did not improve from -13.36571
-Epoch 32: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 147ms/step - loss: -22.8578 - val_loss: -12.7103
-Epoch 33/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -22.7554   
-Epoch 33: val_loss did not improve from -13.36571
-Epoch 33: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 147ms/step - loss: -23.1882 - val_loss: -13.2730
-Epoch 34/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -23.0626   
-Epoch 34: val_loss did not improve from -13.36571
-Epoch 34: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2212s 147ms/step - loss: -23.5211 - val_loss: -12.4668
-Epoch 35/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -23.4477   
-Epoch 35: val_loss did not improve from -13.36571
-Epoch 35: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 147ms/step - loss: -23.8435 - val_loss: -12.3551
-Epoch 36/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -23.7111   
-Epoch 36: val_loss improved from -13.36571 to -13.45600, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 36: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2215s 148ms/step - loss: -24.1175 - val_loss: -13.4560
-Epoch 37/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -24.0213   
-Epoch 37: val_loss did not improve from -13.45600
-Epoch 37: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2213s 147ms/step - loss: -24.3982 - val_loss: -12.9742
-Epoch 38/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -24.2884   
-Epoch 38: val_loss did not improve from -13.45600
-Epoch 38: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 147ms/step - loss: -24.6698 - val_loss: -12.6332
-Epoch 39/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -24.5493   
-Epoch 39: val_loss improved from -13.45600 to -13.90319, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 39: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2213s 147ms/step - loss: -24.8573 - val_loss: -13.9032
-Epoch 40/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -24.7768   
-Epoch 40: val_loss did not improve from -13.90319
-Epoch 40: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2211s 147ms/step - loss: -25.1376 - val_loss: -13.4905
-Epoch 41/300
-   16/15001 ━━━━━━━━━━━━━━━━━━━━ 37:04 148ms/step - loss: -23.9640
-   17/15001 ━━━━━━━━━━━━━━━━━━━━ 37:04 148ms/step - loss: -24.0224
-   18/15001 ━━━━━━━━━━━━━━━━━━━━ 37:04 148ms/step - loss: -24.0858
-   19/15001 ━━━━━━━━━━━━━━━━━━━━ 37:12 149ms/step - loss: -24.1453
-   20/15001 ━━━━━━━━━━━━━━━━━━━━ 37:11 149ms/step - loss: -24.1967
-   22/15001 ━━━━━━━━━━━━━━━━━━━━ 37:13 149ms/step - loss: -24.3052
-   23/15001 ━━━━━━━━━━━━━━━━━━━━ 37:13 149ms/step - loss: -24.3632
-   24/15001 ━━━━━━━━━━━━━━━━━━━━ 37:12 149ms/step - loss: -24.4208
-   26/15001 ━━━━━━━━━━━━━━━━━━━━ 37:08 149ms/step - loss: -24.5225
-   32/15001 ━━━━━━━━━━━━━━━━━━━━ 37:04 149ms/step - loss: -24.7133/
-   34/15001 ━━━━━━━━━━━━━━━━━━━━ 37:05 149ms/step - loss: -24.7551
-   35/15001 ━━━━━━━━━━━━━━━━━━━━ 37:04 149ms/step - loss: -24.7799
-   36/15001 ━━━━━━━━━━━━━━━━━━━━ 37:08 149ms/step - loss: -24.7986
-   43/15001 ━━━━━━━━━━━━━━━━━━━━ 37:07 149ms/step - loss: -24.9365/
-   45/15001 ━━━━━━━━━━━━━━━━━━━━ 37:06 149ms/step - loss: -24.9605
-   53/15001 ━━━━━━━━━━━━━━━━━━━━ 36:59 149ms/step - loss: -25.0096/
-   54/15001 ━━━━━━━━━━━━━━━━━━━━ 37:00 149ms/step - loss: -25.0070
-   55/15001 ━━━━━━━━━━━━━━━━━━━━ 37:01 149ms/step - loss: -25.0025
-   61/15001 ━━━━━━━━━━━━━━━━━━━━ 37:00 149ms/step - loss: -24.9915/
-   62/15001 ━━━━━━━━━━━━━━━━━━━━ 36:59 149ms/step - loss: -24.9921
-   70/15001 ━━━━━━━━━━━━━━━━━━━━ 36:53 148ms/step - loss: -24.9952/
-   71/15001 ━━━━━━━━━━━━━━━━━━━━ 36:54 148ms/step - loss: -24.9951
-   76/15001 ━━━━━━━━━━━━━━━━━━━━ 36:54 148ms/step - loss: -24.9900/
-   82/15001 ━━━━━━━━━━━━━━━━━━━━ 36:53 148ms/step - loss: -24.9856/
-   87/15001 ━━━━━━━━━━━━━━━━━━━━ 36:53 148ms/step - loss: -24.9751/
-   98/15001 ━━━━━━━━━━━━━━━━━━━━ 36:51 148ms/step - loss: -24.9235/
-  103/15001 ━━━━━━━━━━━━━━━━━━━━ 36:50 148ms/step - loss: -24.9004/
-  108/15001 ━━━━━━━━━━━━━━━━━━━━ 36:49 148ms/step - loss: -24.8772/
-  112/15001 ━━━━━━━━━━━━━━━━━━━━ 36:49 148ms/step - loss: -24.8578/
-  117/15001 ━━━━━━━━━━━━━━━━━━━━ 36:48 148ms/step - loss: -24.8321/
-  121/15001 ━━━━━━━━━━━━━━━━━━━━ 36:47 148ms/step - loss: -24.8137/
-  125/15001 ━━━━━━━━━━━━━━━━━━━━ 36:47 148ms/step - loss: -24.7954/
-  129/15001 ━━━━━━━━━━━━━━━━━━━━ 36:47 148ms/step - loss: -24.7797/
-  133/15001 ━━━━━━━━━━━━━━━━━━━━ 36:47 149ms/step - loss: -24.7660/
-  137/15001 ━━━━━━━━━━━━━━━━━━━━ 36:47 149ms/step - loss: -24.7534/
-  141/15001 ━━━━━━━━━━━━━━━━━━━━ 36:46 149ms/step - loss: -24.7432/
-  145/15001 ━━━━━━━━━━━━━━━━━━━━ 36:46 149ms/step - loss: -24.7347/
-  149/15001 ━━━━━━━━━━━━━━━━━━━━ 36:47 149ms/step - loss: -24.7250/
-  153/15001 ━━━━━━━━━━━━━━━━━━━━ 36:47 149ms/step - loss: -24.7145/
-  157/15001 ━━━━━━━━━━━━━━━━━━━━ 36:47 149ms/step - loss: -24.7044/
-  162/15001 ━━━━━━━━━━━━━━━━━━━━ 36:46 149ms/step - loss: -24.6921/
-  166/15001 ━━━━━━━━━━━━━━━━━━━━ 36:45 149ms/step - loss: -24.6839/
-  170/15001 ━━━━━━━━━━━━━━━━━━━━ 36:44 149ms/step - loss: -24.6763/
-  174/15001 ━━━━━━━━━━━━━━━━━━━━ 36:43 149ms/step - loss: -24.6690/
-  178/15001 ━━━━━━━━━━━━━━━━━━━━ 36:43 149ms/step - loss: -24.6629/
-  182/15001 ━━━━━━━━━━━━━━━━━━━━ 36:42 149ms/step - loss: -24.6568/
-  186/15001 ━━━━━━━━━━━━━━━━━━━━ 36:41 149ms/step - loss: -24.6520/
-  191/15001 ━━━━━━━━━━━━━━━━━━━━ 36:40 149ms/step - loss: -24.6461/
-  195/15001 ━━━━━━━━━━━━━━━━━━━━ 36:40 149ms/step - loss: -24.6421/
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -24.9834   
-Epoch 41: val_loss improved from -13.90319 to -14.02530, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 41: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2219s 148ms/step - loss: -25.3462 - val_loss: -14.0253
-Epoch 42/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -25.1990   
-Epoch 42: val_loss did not improve from -14.02530
-Epoch 42: Learning rate = 0.000100
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2211s 147ms/step - loss: -25.5231 - val_loss: -13.1466
-Epoch 43/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -25.4016   
-Epoch 43: val_loss did not improve from -14.02530
-Epoch 43: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2212s 147ms/step - loss: -25.7272 - val_loss: -13.2802
-Epoch 44/300
-14130/15001 ━━━━━━━━━━━━━━━━━━━━ 2:05 144ms/step - loss: -25.5471 
-14131/15001 ━━━━━━━━━━━━━━━━━━━━ 2:05 144ms/step - loss: -25.5471
-14133/15001 ━━━━━━━━━━━━━━━━━━━━ 2:05 144ms/step - loss: -25.5472
-14134/15001 ━━━━━━━━━━━━━━━━━━━━ 2:05 144ms/step - loss: -25.5472
-14135/15001 ━━━━━━━━━━━━━━━━━━━━ 2:04 144ms/step - loss: -25.5472
-14136/15001 ━━━━━━━━━━━━━━━━━━━━ 2:04 144ms/step - loss: -25.5473
-14138/15001 ━━━━━━━━━━━━━━━━━━━━ 2:04 144ms/step - loss: -25.5473
-14139/15001 ━━━━━━━━━━━━━━━━━━━━ 2:04 144ms/step - loss: -25.5473
-14140/15001 ━━━━━━━━━━━━━━━━━━━━ 2:04 144ms/step - loss: -25.5473
-14142/15001 ━━━━━━━━━━━━━━━━━━━━ 2:03 144ms/step - loss: -25.5474
-14143/15001 ━━━━━━━━━━━━━━━━━━━━ 2:03 144ms/step - loss: -25.5474
-14156/15001 ━━━━━━━━━━━━━━━━━━━━ 2:01 144ms/step - loss: -25.5477/
-14157/15001 ━━━━━━━━━━━━━━━━━━━━ 2:01 144ms/step - loss: -25.5477
-14159/15001 ━━━━━━━━━━━━━━━━━━━━ 2:01 144ms/step - loss: -25.5478
-14167/15001 ━━━━━━━━━━━━━━━━━━━━ 2:00 144ms/step - loss: -25.5480/
-14168/15001 ━━━━━━━━━━━━━━━━━━━━ 2:00 144ms/step - loss: -25.5480
-14203/15001 ━━━━━━━━━━━━━━━━━━━━ 1:55 144ms/step - loss: -25.5488/
-14205/15001 ━━━━━━━━━━━━━━━━━━━━ 1:54 144ms/step - loss: -25.5488
-14206/15001 ━━━━━━━━━━━━━━━━━━━━ 1:54 144ms/step - loss: -25.5488
-14217/15001 ━━━━━━━━━━━━━━━━━━━━ 1:53 144ms/step - loss: -25.5491/
-14218/15001 ━━━━━━━━━━━━━━━━━━━━ 1:52 144ms/step - loss: -25.5491
-14230/15001 ━━━━━━━━━━━━━━━━━━━━ 1:51 144ms/step - loss: -25.5494/
-14231/15001 ━━━━━━━━━━━━━━━━━━━━ 1:51 144ms/step - loss: -25.5494
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -25.5666  
-Epoch 44: val_loss improved from -14.02530 to -14.13267, saving model to model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras
-Epoch 44: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2218s 148ms/step - loss: -25.8928 - val_loss: -14.1327
-Epoch 45/300
-  156/15001 ━━━━━━━━━━━━━━━━━━━━ 36:30 148ms/step - loss: -25.9071
-  158/15001 ━━━━━━━━━━━━━━━━━━━━ 36:30 148ms/step - loss: -25.8978
-  159/15001 ━━━━━━━━━━━━━━━━━━━━ 36:30 148ms/step - loss: -25.8933
-  166/15001 ━━━━━━━━━━━━━━━━━━━━ 36:29 148ms/step - loss: -25.8624/
-  168/15001 ━━━━━━━━━━━━━━━━━━━━ 36:28 148ms/step - loss: -25.8543
-  176/15001 ━━━━━━━━━━━━━━━━━━━━ 36:28 148ms/step - loss: -25.8252/
-  177/15001 ━━━━━━━━━━━━━━━━━━━━ 36:28 148ms/step - loss: -25.8216
-  182/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -25.8047/
-  196/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -25.7588
-  198/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -25.7525
-  202/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -25.7403/
-  208/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -25.7236/
-  214/15001 ━━━━━━━━━━━━━━━━━━━━ 36:27 148ms/step - loss: -25.7093/
-  220/15001 ━━━━━━━━━━━━━━━━━━━━ 36:26 148ms/step - loss: -25.6959/
-  227/15001 ━━━━━━━━━━━━━━━━━━━━ 36:25 148ms/step - loss: -25.6803/
-  233/15001 ━━━━━━━━━━━━━━━━━━━━ 36:24 148ms/step - loss: -25.6668/
- 4341/15001 ━━━━━━━━━━━━━━━━━━━━ 26:33 150ms/step - loss: -25.5356
- 4346/15001 ━━━━━━━━━━━━━━━━━━━━ 26:32 150ms/step - loss: -25.5355/
- 4371/15001 ━━━━━━━━━━━━━━━━━━━━ 26:29 149ms/step - loss: -25.5353
- 4389/15001 ━━━━━━━━━━━━━━━━━━━━ 26:26 149ms/step - loss: -25.5351/
- 4405/15001 ━━━━━━━━━━━━━━━━━━━━ 26:23 149ms/step - loss: -25.5349/
- 4417/15001 ━━━━━━━━━━━━━━━━━━━━ 26:22 149ms/step - loss: -25.5347/
- 4421/15001 ━━━━━━━━━━━━━━━━━━━━ 26:21 149ms/step - loss: -25.5347
- 4425/15001 ━━━━━━━━━━━━━━━━━━━━ 26:20 149ms/step - loss: -25.5347
- 4428/15001 ━━━━━━━━━━━━━━━━━━━━ 26:20 149ms/step - loss: -25.5346
- 4431/15001 ━━━━━━━━━━━━━━━━━━━━ 26:20 149ms/step - loss: -25.5346
- 4434/15001 ━━━━━━━━━━━━━━━━━━━━ 26:19 149ms/step - loss: -25.5346
- 4437/15001 ━━━━━━━━━━━━━━━━━━━━ 26:19 149ms/step - loss: -25.5345
- 4440/15001 ━━━━━━━━━━━━━━━━━━━━ 26:18 149ms/step - loss: -25.5345
- 4443/15001 ━━━━━━━━━━━━━━━━━━━━ 26:18 149ms/step - loss: -25.5345
- 4446/15001 ━━━━━━━━━━━━━━━━━━━━ 26:17 149ms/step - loss: -25.5344
- 4449/15001 ━━━━━━━━━━━━━━━━━━━━ 26:17 149ms/step - loss: -25.5344
- 4452/15001 ━━━━━━━━━━━━━━━━━━━━ 26:16 149ms/step - loss: -25.5344
- 4455/15001 ━━━━━━━━━━━━━━━━━━━━ 26:16 149ms/step - loss: -25.5343
- 4458/15001 ━━━━━━━━━━━━━━━━━━━━ 26:15 149ms/step - loss: -25.5343
- 4461/15001 ━━━━━━━━━━━━━━━━━━━━ 26:15 149ms/step - loss: -25.5343
- 4463/15001 ━━━━━━━━━━━━━━━━━━━━ 26:15 149ms/step - loss: -25.5342
- 4466/15001 ━━━━━━━━━━━━━━━━━━━━ 26:14 149ms/step - loss: -25.5342
- 4475/15001 ━━━━━━━━━━━━━━━━━━━━ 26:13 149ms/step - loss: -25.5341/
- 4491/15001 ━━━━━━━━━━━━━━━━━━━━ 26:10 149ms/step - loss: -25.5339/
- 4496/15001 ━━━━━━━━━━━━━━━━━━━━ 26:10 149ms/step - loss: -25.5338
- 4500/15001 ━━━━━━━━━━━━━━━━━━━━ 26:09 149ms/step - loss: -25.5338
- 5068/15001 ━━━━━━━━━━━━━━━━━━━━ 24:44 149ms/step - loss: -25.5309
- 5072/15001 ━━━━━━━━━━━━━━━━━━━━ 24:44 149ms/step - loss: -25.5309
- 5074/15001 ━━━━━━━━━━━━━━━━━━━━ 24:43 149ms/step - loss: -25.5309
- 5077/15001 ━━━━━━━━━━━━━━━━━━━━ 24:43 149ms/step - loss: -25.5309
- 5079/15001 ━━━━━━━━━━━━━━━━━━━━ 24:43 149ms/step - loss: -25.5309
- 5088/15001 ━━━━━━━━━━━━━━━━━━━━ 24:41 149ms/step - loss: -25.5309/
- 5090/15001 ━━━━━━━━━━━━━━━━━━━━ 24:41 149ms/step - loss: -25.5309
- 5098/15001 ━━━━━━━━━━━━━━━━━━━━ 24:40 149ms/step - loss: -25.5309/
- 5100/15001 ━━━━━━━━━━━━━━━━━━━━ 24:39 149ms/step - loss: -25.5309
- 5105/15001 ━━━━━━━━━━━━━━━━━━━━ 24:39 149ms/step - loss: -25.5310/
- 5106/15001 ━━━━━━━━━━━━━━━━━━━━ 24:38 149ms/step - loss: -25.5310
- 5116/15001 ━━━━━━━━━━━━━━━━━━━━ 24:37 149ms/step - loss: -25.5310/
- 5120/15001 ━━━━━━━━━━━━━━━━━━━━ 24:36 149ms/step - loss: -25.5310
- 5122/15001 ━━━━━━━━━━━━━━━━━━━━ 24:36 149ms/step - loss: -25.5310
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 149ms/step - loss: -25.7413   
-Epoch 45: val_loss did not improve from -14.13267
-Epoch 45: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2291s 153ms/step - loss: -26.0691 - val_loss: -13.3472
-Epoch 46/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -25.9322   
-Epoch 46: val_loss did not improve from -14.13267
-Epoch 46: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2229s 148ms/step - loss: -26.2465 - val_loss: -13.5971
-Epoch 47/300
-   85/15001 ━━━━━━━━━━━━━━━━━━━━ 36:49 148ms/step - loss: -24.9618
-  102/15001 ━━━━━━━━━━━━━━━━━━━━ 36:42 148ms/step - loss: -24.9831
-  108/15001 ━━━━━━━━━━━━━━━━━━━━ 36:40 148ms/step - loss: -24.9968
-  117/15001 ━━━━━━━━━━━━━━━━━━━━ 36:41 148ms/step - loss: -25.0198
-  124/15001 ━━━━━━━━━━━━━━━━━━━━ 36:39 148ms/step - loss: -25.0401
-  133/15001 ━━━━━━━━━━━━━━━━━━━━ 36:36 148ms/step - loss: -25.0690
-  135/15001 ━━━━━━━━━━━━━━━━━━━━ 36:36 148ms/step - loss: -25.0758
-  137/15001 ━━━━━━━━━━━━━━━━━━━━ 36:37 148ms/step - loss: -25.0832
-  138/15001 ━━━━━━━━━━━━━━━━━━━━ 36:37 148ms/step - loss: -25.0869
-  153/15001 ━━━━━━━━━━━━━━━━━━━━ 36:35 148ms/step - loss: -25.1332/
-  165/15001 ━━━━━━━━━━━━━━━━━━━━ 36:33 148ms/step - loss: -25.1741/
-  180/15001 ━━━━━━━━━━━━━━━━━━━━ 36:31 148ms/step - loss: -25.2231/
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -26.0702   
-Epoch 47: val_loss did not improve from -14.13267
-Epoch 47: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2215s 148ms/step - loss: -26.3900 - val_loss: -12.5743
-Epoch 48/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -26.2122   
-Epoch 48: val_loss did not improve from -14.13267
-Epoch 48: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2211s 147ms/step - loss: -26.5344 - val_loss: -13.3615
-Epoch 49/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -26.3863   
-Epoch 49: val_loss did not improve from -14.13267
-Epoch 49: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 148ms/step - loss: -26.6715 - val_loss: -13.5485
-Epoch 50/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -26.4687   
-Epoch 50: val_loss did not improve from -14.13267
-Epoch 50: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2212s 147ms/step - loss: -26.8178 - val_loss: -13.9052
-Epoch 51/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -26.6302   
-Epoch 51: val_loss did not improve from -14.13267
-Epoch 51: Learning rate = 0.000099
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 147ms/step - loss: -26.9278 - val_loss: -13.2832
-Epoch 52/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -26.7219   
-Epoch 52: val_loss did not improve from -14.13267
-Epoch 52: Learning rate = 0.000098
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 147ms/step - loss: -27.0680 - val_loss: -13.5848
-Epoch 53/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 144ms/step - loss: -26.8867   
-Epoch 53: val_loss did not improve from -14.13267
-Epoch 53: Learning rate = 0.000098
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2214s 148ms/step - loss: -26.9913 - val_loss: -13.2832
-Epoch 54/300
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 0s 145ms/step - loss: -26.9913   
-Epoch 54: val_loss did not improve from -14.13267
-Epoch 54: Learning rate = 0.000098
-15001/15001 ━━━━━━━━━━━━━━━━━━━━ 2221s 148ms/step - loss: -27.2729 - val_loss: -13.7659
+root@9f872ecb38e0:/workspace/pse-libri2mix-optimizations# python train.py --l si-sdr --full-utterance --stft-interact
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1790945872.415029 2680213 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+I0000 00:00:1790945872.463310 2680213 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F AVX512_VNNI AVX512_BF16 AVX512_FP16 AVX_VNNI AMX_TILE AMX_INT8 AMX_BF16 AMX_FP16 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1790945873.413587 2680213 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+Reference mode: full auxiliary utterance
+Injection: SEF-PNet STFT frame similarity
+Frontend: 256-point sqrt-Hann, hop 64, chunk 32000, stride 16000, no peak norm
+Utterances: train 13900 dev 3000 test 3000
+Loader: SEF-PNet chunk dataloader (one optimizer step per chunk batch)
+W0000 00:00:1790945874.863418 2680213 gpu_device.cc:2459] TensorFlow was not built with CUDA kernel binaries compatible with compute capability 12.0a. CUDA kernels will be jit-compiled from PTX, which could take 30 minutes or longer.
+W0000 00:00:1790945874.877762 2680213 gpu_device.cc:2459] TensorFlow was not built with CUDA kernel binaries compatible with compute capability 12.0a. CUDA kernels will be jit-compiled from PTX, which could take 30 minutes or longer.
+I0000 00:00:1790945874.994865 2680213 gpu_device.cc:2043] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 94219 MB memory:  -> device: 0, name: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, pci bus id: 0000:ae:00.0, compute capability: 12.0a
+Model: "functional"
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Layer (type)                  ┃ Output Shape              ┃         Param # ┃ Connected to               ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ noisy_main (InputLayer)       │ (None, 503, 129, 2)       │               0 │ -                          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ noisy_ref (InputLayer)        │ (None, 2304, 129, 2)      │               0 │ -                          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ compress_main                 │ (None, 503, 129, 2)       │               0 │ noisy_main[0][0]           │
+│ (PowerLawComplexSpec)         │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ compress_ref                  │ (None, 2304, 129, 2)      │               0 │ noisy_ref[0][0]            │
+│ (PowerLawComplexSpec)         │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ ref_mask (InputLayer)         │ (None, 2304)              │               0 │ -                          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ stft_sim                      │ (None, 503, 129, 4)       │               0 │ compress_main[0][0],       │
+│ (STFTFrameSimilarity)         │                           │                 │ compress_ref[0][0],        │
+│                               │                           │                 │ ref_mask[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ get_item (GetItem)            │ (None, 503, 129, 2)       │               0 │ stft_sim[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ get_item_1 (GetItem)          │ (None, 503, 129, 2)       │               0 │ stft_sim[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ stft_guided (Reshape)         │ (None, 503, 129, 2)       │               0 │ get_item[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ stft_mean (Reshape)           │ (None, 503, 129, 2)       │               0 │ get_item_1[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add (Add)                     │ (None, 503, 129, 2)       │               0 │ stft_guided[0][0],         │
+│                               │                           │                 │ stft_mean[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ global_average_pooling2d      │ (None, 1, 1, 2)           │               0 │ add[0][0]                  │
+│ (GlobalAveragePooling2D)      │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d (Conv2D)               │ (None, 503, 129, 64)      │             192 │ add[0][0]                  │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_2 (Conv2D)             │ (None, 1, 1, 64)          │             192 │ global_average_pooling2d[… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization           │ (None, 503, 129, 64)      │             256 │ conv2d[0][0]               │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_2         │ (None, 1, 1, 64)          │             256 │ conv2d_2[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation (Activation)       │ (None, 503, 129, 64)      │               0 │ batch_normalization[0][0]  │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_1 (Activation)     │ (None, 1, 1, 64)          │               0 │ batch_normalization_2[0][… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_1 (Conv2D)             │ (None, 503, 129, 2)       │             130 │ activation[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_3 (Conv2D)             │ (None, 1, 1, 2)           │             130 │ activation_1[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_1         │ (None, 503, 129, 2)       │               8 │ conv2d_1[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_3         │ (None, 1, 1, 2)           │               8 │ conv2d_3[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_1 (Add)                   │ (None, 503, 129, 2)       │               0 │ batch_normalization_1[0][… │
+│                               │                           │                 │ batch_normalization_3[0][… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_2 (Activation)     │ (None, 503, 129, 2)       │               0 │ add_1[0][0]                │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ lambda (Lambda)               │ (None, 503, 129, 2)       │               0 │ activation_2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply (Multiply)           │ (None, 503, 129, 2)       │               0 │ stft_guided[0][0],         │
+│                               │                           │                 │ activation_2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_1 (Multiply)         │ (None, 503, 129, 2)       │               0 │ stft_mean[0][0],           │
+│                               │                           │                 │ lambda[0][0]               │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_2 (Add)                   │ (None, 503, 129, 2)       │               0 │ multiply[0][0],            │
+│                               │                           │                 │ multiply_1[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ global_average_pooling2d_1    │ (None, 1, 1, 2)           │               0 │ add_2[0][0]                │
+│ (GlobalAveragePooling2D)      │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_4 (Conv2D)             │ (None, 503, 129, 64)      │             192 │ add_2[0][0]                │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_6 (Conv2D)             │ (None, 1, 1, 64)          │             192 │ global_average_pooling2d_… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_4         │ (None, 503, 129, 64)      │             256 │ conv2d_4[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_6         │ (None, 1, 1, 64)          │             256 │ conv2d_6[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_3 (Activation)     │ (None, 503, 129, 64)      │               0 │ batch_normalization_4[0][… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_4 (Activation)     │ (None, 1, 1, 64)          │               0 │ batch_normalization_6[0][… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_5 (Conv2D)             │ (None, 503, 129, 2)       │             130 │ activation_3[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_7 (Conv2D)             │ (None, 1, 1, 2)           │             130 │ activation_4[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_5         │ (None, 503, 129, 2)       │               8 │ conv2d_5[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_7         │ (None, 1, 1, 2)           │               8 │ conv2d_7[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_3 (Add)                   │ (None, 503, 129, 2)       │               0 │ batch_normalization_5[0][… │
+│                               │                           │                 │ batch_normalization_7[0][… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_5 (Activation)     │ (None, 503, 129, 2)       │               0 │ add_3[0][0]                │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ lambda_1 (Lambda)             │ (None, 503, 129, 2)       │               0 │ activation_5[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_2 (Multiply)         │ (None, 503, 129, 2)       │               0 │ stft_guided[0][0],         │
+│                               │                           │                 │ activation_5[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_3 (Multiply)         │ (None, 503, 129, 2)       │               0 │ stft_mean[0][0],           │
+│                               │                           │                 │ lambda_1[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ stft_ifi (Add)                │ (None, 503, 129, 2)       │               0 │ multiply_2[0][0],          │
+│                               │                           │                 │ multiply_3[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ stft_fuse (Concatenate)       │ (None, 503, 129, 4)       │               0 │ compress_main[0][0],       │
+│                               │                           │                 │ stft_ifi[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ unet_pad (ZeroPadding2D)      │ (None, 512, 144, 4)       │               0 │ stft_fuse[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_tconv2 (Conv2D)         │ (None, 512, 144, 50)      │           5,050 │ unet_pad[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_8 (Activation)     │ (None, 512, 144, 50)      │               0 │ tfb_0_tconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_fconv2 (Conv2D)         │ (None, 512, 144, 50)      │          22,550 │ activation_8[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_concat2 (Concatenate)   │ (None, 512, 144, 100)     │               0 │ tfb_0_tconv2[0][0],        │
+│                               │                           │                 │ tfb_0_fconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_9 (Activation)     │ (None, 512, 144, 50)      │               0 │ tfb_0_fconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_final_concat            │ (None, 512, 144, 150)     │               0 │ tfb_0_concat2[0][0],       │
+│ (Concatenate)                 │                           │                 │ activation_9[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_dw (DepthwiseConv2D)    │ (None, 512, 144, 150)     │           1,500 │ tfb_0_final_concat[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_pw (Conv2D)             │ (None, 512, 144, 50)      │           7,550 │ tfb_0_dw[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_pw_bn                   │ (None, 512, 144, 50)      │             200 │ tfb_0_pw[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_10 (Activation)    │ (None, 512, 144, 50)      │               0 │ tfb_0_pw_bn[0][0]          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_joint (Conv2D)          │ (None, 512, 144, 50)      │          22,550 │ activation_10[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_0_jbn                     │ (None, 512, 144, 50)      │             200 │ tfb_0_joint[0][0]          │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_11 (Activation)    │ (None, 512, 144, 50)      │               0 │ tfb_0_jbn[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ global_average_pooling2d_2    │ (None, 1, 1, 50)          │               0 │ activation_11[0][0]        │
+│ (GlobalAveragePooling2D)      │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_0_l1 (Conv2D)         │ (None, 512, 144, 12)      │             612 │ activation_11[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_0_g1 (Conv2D)         │ (None, 1, 1, 12)          │             612 │ global_average_pooling2d_… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_8         │ (None, 512, 144, 12)      │              48 │ enc_lca_0_l1[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_10        │ (None, 1, 1, 12)          │              48 │ enc_lca_0_g1[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_12 (Activation)    │ (None, 512, 144, 12)      │               0 │ batch_normalization_8[0][… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_13 (Activation)    │ (None, 1, 1, 12)          │               0 │ batch_normalization_10[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_0_l2 (Conv2D)         │ (None, 512, 144, 50)      │             650 │ activation_12[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_0_g2 (Conv2D)         │ (None, 1, 1, 50)          │             650 │ activation_13[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_9         │ (None, 512, 144, 50)      │             200 │ enc_lca_0_l2[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_11        │ (None, 1, 1, 50)          │             200 │ enc_lca_0_g2[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_4 (Add)                   │ (None, 512, 144, 50)      │               0 │ batch_normalization_9[0][… │
+│                               │                           │                 │ batch_normalization_11[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_14 (Activation)    │ (None, 512, 144, 50)      │               0 │ add_4[0][0]                │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_4 (Multiply)         │ (None, 512, 144, 50)      │               0 │ activation_11[0][0],       │
+│                               │                           │                 │ activation_14[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ max_pooling2d (MaxPooling2D)  │ (None, 256, 72, 50)       │               0 │ multiply_4[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_tconv2 (Conv2D)         │ (None, 256, 72, 75)       │          93,825 │ max_pooling2d[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_17 (Activation)    │ (None, 256, 72, 75)       │               0 │ tfb_1_tconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_fconv2 (Conv2D)         │ (None, 256, 72, 75)       │          50,700 │ activation_17[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_concat2 (Concatenate)   │ (None, 256, 72, 150)      │               0 │ tfb_1_tconv2[0][0],        │
+│                               │                           │                 │ tfb_1_fconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_18 (Activation)    │ (None, 256, 72, 75)       │               0 │ tfb_1_fconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_final_concat            │ (None, 256, 72, 225)      │               0 │ tfb_1_concat2[0][0],       │
+│ (Concatenate)                 │                           │                 │ activation_18[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_dw (DepthwiseConv2D)    │ (None, 256, 72, 225)      │           2,250 │ tfb_1_final_concat[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_pw (Conv2D)             │ (None, 256, 72, 75)       │          16,950 │ tfb_1_dw[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_pw_bn                   │ (None, 256, 72, 75)       │             300 │ tfb_1_pw[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_19 (Activation)    │ (None, 256, 72, 75)       │               0 │ tfb_1_pw_bn[0][0]          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_joint (Conv2D)          │ (None, 256, 72, 75)       │          50,700 │ activation_19[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_1_jbn                     │ (None, 256, 72, 75)       │             300 │ tfb_1_joint[0][0]          │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_20 (Activation)    │ (None, 256, 72, 75)       │               0 │ tfb_1_jbn[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ global_average_pooling2d_3    │ (None, 1, 1, 75)          │               0 │ activation_20[0][0]        │
+│ (GlobalAveragePooling2D)      │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_1_l1 (Conv2D)         │ (None, 256, 72, 18)       │           1,368 │ activation_20[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_1_g1 (Conv2D)         │ (None, 1, 1, 18)          │           1,368 │ global_average_pooling2d_… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_12        │ (None, 256, 72, 18)       │              72 │ enc_lca_1_l1[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_14        │ (None, 1, 1, 18)          │              72 │ enc_lca_1_g1[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_21 (Activation)    │ (None, 256, 72, 18)       │               0 │ batch_normalization_12[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_22 (Activation)    │ (None, 1, 1, 18)          │               0 │ batch_normalization_14[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_1_l2 (Conv2D)         │ (None, 256, 72, 75)       │           1,425 │ activation_21[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_1_g2 (Conv2D)         │ (None, 1, 1, 75)          │           1,425 │ activation_22[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_13        │ (None, 256, 72, 75)       │             300 │ enc_lca_1_l2[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_15        │ (None, 1, 1, 75)          │             300 │ enc_lca_1_g2[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_5 (Add)                   │ (None, 256, 72, 75)       │               0 │ batch_normalization_13[0]… │
+│                               │                           │                 │ batch_normalization_15[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_23 (Activation)    │ (None, 256, 72, 75)       │               0 │ add_5[0][0]                │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_5 (Multiply)         │ (None, 256, 72, 75)       │               0 │ activation_20[0][0],       │
+│                               │                           │                 │ activation_23[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ max_pooling2d_1               │ (None, 128, 36, 75)       │               0 │ multiply_5[0][0]           │
+│ (MaxPooling2D)                │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_tconv2 (Conv2D)         │ (None, 128, 36, 112)      │         210,112 │ max_pooling2d_1[0][0]      │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_26 (Activation)    │ (None, 128, 36, 112)      │               0 │ tfb_2_tconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_fconv2 (Conv2D)         │ (None, 128, 36, 112)      │         113,008 │ activation_26[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_concat2 (Concatenate)   │ (None, 128, 36, 224)      │               0 │ tfb_2_tconv2[0][0],        │
+│                               │                           │                 │ tfb_2_fconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_27 (Activation)    │ (None, 128, 36, 112)      │               0 │ tfb_2_fconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_final_concat            │ (None, 128, 36, 336)      │               0 │ tfb_2_concat2[0][0],       │
+│ (Concatenate)                 │                           │                 │ activation_27[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_dw (DepthwiseConv2D)    │ (None, 128, 36, 336)      │           3,360 │ tfb_2_final_concat[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_pw (Conv2D)             │ (None, 128, 36, 112)      │          37,744 │ tfb_2_dw[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_pw_bn                   │ (None, 128, 36, 112)      │             448 │ tfb_2_pw[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_28 (Activation)    │ (None, 128, 36, 112)      │               0 │ tfb_2_pw_bn[0][0]          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_joint (Conv2D)          │ (None, 128, 36, 112)      │         113,008 │ activation_28[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_2_jbn                     │ (None, 128, 36, 112)      │             448 │ tfb_2_joint[0][0]          │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_29 (Activation)    │ (None, 128, 36, 112)      │               0 │ tfb_2_jbn[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ global_average_pooling2d_4    │ (None, 1, 1, 112)         │               0 │ activation_29[0][0]        │
+│ (GlobalAveragePooling2D)      │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_2_l1 (Conv2D)         │ (None, 128, 36, 28)       │           3,164 │ activation_29[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_2_g1 (Conv2D)         │ (None, 1, 1, 28)          │           3,164 │ global_average_pooling2d_… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_16        │ (None, 128, 36, 28)       │             112 │ enc_lca_2_l1[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_18        │ (None, 1, 1, 28)          │             112 │ enc_lca_2_g1[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_30 (Activation)    │ (None, 128, 36, 28)       │               0 │ batch_normalization_16[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_31 (Activation)    │ (None, 1, 1, 28)          │               0 │ batch_normalization_18[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_2_l2 (Conv2D)         │ (None, 128, 36, 112)      │           3,248 │ activation_30[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_2_g2 (Conv2D)         │ (None, 1, 1, 112)         │           3,248 │ activation_31[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_17        │ (None, 128, 36, 112)      │             448 │ enc_lca_2_l2[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_19        │ (None, 1, 1, 112)         │             448 │ enc_lca_2_g2[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_6 (Add)                   │ (None, 128, 36, 112)      │               0 │ batch_normalization_17[0]… │
+│                               │                           │                 │ batch_normalization_19[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_32 (Activation)    │ (None, 128, 36, 112)      │               0 │ add_6[0][0]                │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_6 (Multiply)         │ (None, 128, 36, 112)      │               0 │ activation_29[0][0],       │
+│                               │                           │                 │ activation_32[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ max_pooling2d_2               │ (None, 64, 18, 112)       │               0 │ multiply_6[0][0]           │
+│ (MaxPooling2D)                │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_tconv2 (Conv2D)         │ (None, 64, 18, 168)       │         470,568 │ max_pooling2d_2[0][0]      │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_35 (Activation)    │ (None, 64, 18, 168)       │               0 │ tfb_3_tconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_fconv2 (Conv2D)         │ (None, 64, 18, 168)       │         254,184 │ activation_35[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_concat2 (Concatenate)   │ (None, 64, 18, 336)       │               0 │ tfb_3_tconv2[0][0],        │
+│                               │                           │                 │ tfb_3_fconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_36 (Activation)    │ (None, 64, 18, 168)       │               0 │ tfb_3_fconv2[0][0]         │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_final_concat            │ (None, 64, 18, 504)       │               0 │ tfb_3_concat2[0][0],       │
+│ (Concatenate)                 │                           │                 │ activation_36[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_dw (DepthwiseConv2D)    │ (None, 64, 18, 504)       │           5,040 │ tfb_3_final_concat[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_pw (Conv2D)             │ (None, 64, 18, 168)       │          84,840 │ tfb_3_dw[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_pw_bn                   │ (None, 64, 18, 168)       │             672 │ tfb_3_pw[0][0]             │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_37 (Activation)    │ (None, 64, 18, 168)       │               0 │ tfb_3_pw_bn[0][0]          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_joint (Conv2D)          │ (None, 64, 18, 168)       │         254,184 │ activation_37[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ tfb_3_jbn                     │ (None, 64, 18, 168)       │             672 │ tfb_3_joint[0][0]          │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_38 (Activation)    │ (None, 64, 18, 168)       │               0 │ tfb_3_jbn[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ global_average_pooling2d_5    │ (None, 1, 1, 168)         │               0 │ activation_38[0][0]        │
+│ (GlobalAveragePooling2D)      │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_3_l1 (Conv2D)         │ (None, 64, 18, 42)        │           7,098 │ activation_38[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_3_g1 (Conv2D)         │ (None, 1, 1, 42)          │           7,098 │ global_average_pooling2d_… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_20        │ (None, 64, 18, 42)        │             168 │ enc_lca_3_l1[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_22        │ (None, 1, 1, 42)          │             168 │ enc_lca_3_g1[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_39 (Activation)    │ (None, 64, 18, 42)        │               0 │ batch_normalization_20[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_40 (Activation)    │ (None, 1, 1, 42)          │               0 │ batch_normalization_22[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_3_l2 (Conv2D)         │ (None, 64, 18, 168)       │           7,224 │ activation_39[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ enc_lca_3_g2 (Conv2D)         │ (None, 1, 1, 168)         │           7,224 │ activation_40[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_21        │ (None, 64, 18, 168)       │             672 │ enc_lca_3_l2[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ batch_normalization_23        │ (None, 1, 1, 168)         │             672 │ enc_lca_3_g2[0][0]         │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_7 (Add)                   │ (None, 64, 18, 168)       │               0 │ batch_normalization_21[0]… │
+│                               │                           │                 │ batch_normalization_23[0]… │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_41 (Activation)    │ (None, 64, 18, 168)       │               0 │ add_7[0][0]                │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_7 (Multiply)         │ (None, 64, 18, 168)       │               0 │ activation_38[0][0],       │
+│                               │                           │                 │ activation_41[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ max_pooling2d_3               │ (None, 32, 9, 168)        │               0 │ multiply_7[0][0]           │
+│ (MaxPooling2D)                │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ reshape (Reshape)             │ (None, 32, 1512)          │               0 │ max_pooling2d_3[0][0]      │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ main_bottleneck_sLSTM_0 (RNN) │ (None, 32, 128)           │         840,192 │ reshape[0][0]              │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ time_distributed              │ (None, 32, 1512)          │         195,048 │ main_bottleneck_sLSTM_0[0… │
+│ (TimeDistributed)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ reshape_1 (Reshape)           │ (None, 32, 9, 168)        │               0 │ time_distributed[0][0]     │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ bn_reconstruct (Conv2D)       │ (None, 32, 9, 168)        │          28,392 │ reshape_1[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_transpose              │ (None, 64, 18, 168)       │         113,064 │ bn_reconstruct[0][0]       │
+│ (Conv2DTranspose)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ concatenate (Concatenate)     │ (None, 64, 18, 336)       │               0 │ conv2d_transpose[0][0],    │
+│                               │                           │                 │ multiply_7[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_tconv2 (Conv2D)   │ (None, 64, 18, 168)       │       1,411,368 │ concatenate[0][0]          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_44 (Activation)    │ (None, 64, 18, 168)       │               0 │ up_conv_168_tconv2[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_fconv2 (Conv2D)   │ (None, 64, 18, 168)       │         254,184 │ activation_44[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_concat2           │ (None, 64, 18, 336)       │               0 │ up_conv_168_tconv2[0][0],  │
+│ (Concatenate)                 │                           │                 │ up_conv_168_fconv2[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_45 (Activation)    │ (None, 64, 18, 168)       │               0 │ up_conv_168_fconv2[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_final_concat      │ (None, 64, 18, 504)       │               0 │ up_conv_168_concat2[0][0], │
+│ (Concatenate)                 │                           │                 │ activation_45[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_dw                │ (None, 64, 18, 504)       │           5,040 │ up_conv_168_final_concat[… │
+│ (DepthwiseConv2D)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_pw (Conv2D)       │ (None, 64, 18, 168)       │          84,840 │ up_conv_168_dw[0][0]       │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_pw_bn             │ (None, 64, 18, 168)       │             672 │ up_conv_168_pw[0][0]       │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_46 (Activation)    │ (None, 64, 18, 168)       │               0 │ up_conv_168_pw_bn[0][0]    │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_joint (Conv2D)    │ (None, 64, 18, 168)       │         254,184 │ activation_46[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_168_jbn               │ (None, 64, 18, 168)       │             672 │ up_conv_168_joint[0][0]    │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_47 (Activation)    │ (None, 64, 18, 168)       │               0 │ up_conv_168_jbn[0][0]      │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_transpose_1            │ (None, 128, 36, 112)      │          75,376 │ activation_47[0][0]        │
+│ (Conv2DTranspose)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ concatenate_1 (Concatenate)   │ (None, 128, 36, 224)      │               0 │ conv2d_transpose_1[0][0],  │
+│                               │                           │                 │ multiply_6[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_tconv2 (Conv2D)   │ (None, 128, 36, 112)      │         627,312 │ concatenate_1[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_50 (Activation)    │ (None, 128, 36, 112)      │               0 │ up_conv_112_tconv2[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_fconv2 (Conv2D)   │ (None, 128, 36, 112)      │         113,008 │ activation_50[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_concat2           │ (None, 128, 36, 224)      │               0 │ up_conv_112_tconv2[0][0],  │
+│ (Concatenate)                 │                           │                 │ up_conv_112_fconv2[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_51 (Activation)    │ (None, 128, 36, 112)      │               0 │ up_conv_112_fconv2[0][0]   │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_final_concat      │ (None, 128, 36, 336)      │               0 │ up_conv_112_concat2[0][0], │
+│ (Concatenate)                 │                           │                 │ activation_51[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_dw                │ (None, 128, 36, 336)      │           3,360 │ up_conv_112_final_concat[… │
+│ (DepthwiseConv2D)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_pw (Conv2D)       │ (None, 128, 36, 112)      │          37,744 │ up_conv_112_dw[0][0]       │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_pw_bn             │ (None, 128, 36, 112)      │             448 │ up_conv_112_pw[0][0]       │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_52 (Activation)    │ (None, 128, 36, 112)      │               0 │ up_conv_112_pw_bn[0][0]    │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_joint (Conv2D)    │ (None, 128, 36, 112)      │         113,008 │ activation_52[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_112_jbn               │ (None, 128, 36, 112)      │             448 │ up_conv_112_joint[0][0]    │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_53 (Activation)    │ (None, 128, 36, 112)      │               0 │ up_conv_112_jbn[0][0]      │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_transpose_2            │ (None, 256, 72, 75)       │          33,675 │ activation_53[0][0]        │
+│ (Conv2DTranspose)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ concatenate_2 (Concatenate)   │ (None, 256, 72, 150)      │               0 │ conv2d_transpose_2[0][0],  │
+│                               │                           │                 │ multiply_5[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_tconv2 (Conv2D)    │ (None, 256, 72, 75)       │         281,325 │ concatenate_2[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_56 (Activation)    │ (None, 256, 72, 75)       │               0 │ up_conv_75_tconv2[0][0]    │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_fconv2 (Conv2D)    │ (None, 256, 72, 75)       │          50,700 │ activation_56[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_concat2            │ (None, 256, 72, 150)      │               0 │ up_conv_75_tconv2[0][0],   │
+│ (Concatenate)                 │                           │                 │ up_conv_75_fconv2[0][0]    │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_57 (Activation)    │ (None, 256, 72, 75)       │               0 │ up_conv_75_fconv2[0][0]    │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_final_concat       │ (None, 256, 72, 225)      │               0 │ up_conv_75_concat2[0][0],  │
+│ (Concatenate)                 │                           │                 │ activation_57[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_dw                 │ (None, 256, 72, 225)      │           2,250 │ up_conv_75_final_concat[0… │
+│ (DepthwiseConv2D)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_pw (Conv2D)        │ (None, 256, 72, 75)       │          16,950 │ up_conv_75_dw[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_pw_bn              │ (None, 256, 72, 75)       │             300 │ up_conv_75_pw[0][0]        │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_58 (Activation)    │ (None, 256, 72, 75)       │               0 │ up_conv_75_pw_bn[0][0]     │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_joint (Conv2D)     │ (None, 256, 72, 75)       │          50,700 │ activation_58[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_75_jbn                │ (None, 256, 72, 75)       │             300 │ up_conv_75_joint[0][0]     │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_59 (Activation)    │ (None, 256, 72, 75)       │               0 │ up_conv_75_jbn[0][0]       │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ conv2d_transpose_3            │ (None, 512, 144, 50)      │          15,050 │ activation_59[0][0]        │
+│ (Conv2DTranspose)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ concatenate_3 (Concatenate)   │ (None, 512, 144, 100)     │               0 │ conv2d_transpose_3[0][0],  │
+│                               │                           │                 │ multiply_4[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_tconv2 (Conv2D)    │ (None, 512, 144, 50)      │         125,050 │ concatenate_3[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_62 (Activation)    │ (None, 512, 144, 50)      │               0 │ up_conv_50_tconv2[0][0]    │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_fconv2 (Conv2D)    │ (None, 512, 144, 50)      │          22,550 │ activation_62[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_concat2            │ (None, 512, 144, 100)     │               0 │ up_conv_50_tconv2[0][0],   │
+│ (Concatenate)                 │                           │                 │ up_conv_50_fconv2[0][0]    │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_63 (Activation)    │ (None, 512, 144, 50)      │               0 │ up_conv_50_fconv2[0][0]    │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_final_concat       │ (None, 512, 144, 150)     │               0 │ up_conv_50_concat2[0][0],  │
+│ (Concatenate)                 │                           │                 │ activation_63[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_dw                 │ (None, 512, 144, 150)     │           1,500 │ up_conv_50_final_concat[0… │
+│ (DepthwiseConv2D)             │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_pw (Conv2D)        │ (None, 512, 144, 50)      │           7,550 │ up_conv_50_dw[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_pw_bn              │ (None, 512, 144, 50)      │             200 │ up_conv_50_pw[0][0]        │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_64 (Activation)    │ (None, 512, 144, 50)      │               0 │ up_conv_50_pw_bn[0][0]     │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_joint (Conv2D)     │ (None, 512, 144, 50)      │          22,550 │ activation_64[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ up_conv_50_jbn                │ (None, 512, 144, 50)      │             200 │ up_conv_50_joint[0][0]     │
+│ (BatchNormalization)          │                           │                 │                            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ activation_65 (Activation)    │ (None, 512, 144, 50)      │               0 │ up_conv_50_jbn[0][0]       │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ unet_crop (Cropping2D)        │ (None, 503, 129, 50)      │               0 │ activation_65[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ mask_real (Conv2D)            │ (None, 503, 129, 1)       │              51 │ unet_crop[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ mask_imag (Conv2D)            │ (None, 503, 129, 1)       │              51 │ unet_crop[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ get_item_2 (GetItem)          │ (None, 503, 129, 1)       │               0 │ compress_main[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ scale_r (LearnableScale)      │ (None, 503, 129, 1)       │               1 │ mask_real[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ scale_i (LearnableScale)      │ (None, 503, 129, 1)       │               1 │ mask_imag[0][0]            │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ get_item_3 (GetItem)          │ (None, 503, 129, 1)       │               0 │ compress_main[0][0]        │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_8 (Multiply)         │ (None, 503, 129, 1)       │               0 │ scale_r[0][0],             │
+│                               │                           │                 │ get_item_2[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_9 (Multiply)         │ (None, 503, 129, 1)       │               0 │ scale_i[0][0],             │
+│                               │                           │                 │ get_item_3[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_10 (Multiply)        │ (None, 503, 129, 1)       │               0 │ scale_r[0][0],             │
+│                               │                           │                 │ get_item_3[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ multiply_11 (Multiply)        │ (None, 503, 129, 1)       │               0 │ scale_i[0][0],             │
+│                               │                           │                 │ get_item_2[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ subtract (Subtract)           │ (None, 503, 129, 1)       │               0 │ multiply_8[0][0],          │
+│                               │                           │                 │ multiply_9[0][0]           │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_8 (Add)                   │ (None, 503, 129, 1)       │               0 │ multiply_10[0][0],         │
+│                               │                           │                 │ multiply_11[0][0]          │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_9 (Add)                   │ (None, 503, 129, 1)       │               0 │ get_item_2[0][0],          │
+│                               │                           │                 │ subtract[0][0]             │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ add_10 (Add)                  │ (None, 503, 129, 1)       │               0 │ get_item_3[0][0],          │
+│                               │                           │                 │ add_8[0][0]                │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ concatenate_4 (Concatenate)   │ (None, 503, 129, 2)       │               0 │ add_9[0][0], add_10[0][0]  │
+├───────────────────────────────┼───────────────────────────┼─────────────────┼────────────────────────────┤
+│ decompress_out                │ (None, 503, 129, 2)       │               0 │ concatenate_4[0][0]        │
+│ (PowerLawComplexSpec)         │                           │                 │                            │
+└───────────────────────────────┴───────────────────────────┴─────────────────┴────────────────────────────┘
+ Total params: 6,668,189 (25.44 MB)
+ Trainable params: 6,662,401 (25.42 MB)
+ Non-trainable params: 5,788 (22.61 KB)
+Training with SEF-PNet SiSnrTrainer (Scale-Invariant Signal-to-Distortion Ratio)
+Checkpoint: model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Adam lr=0.0005, batch 64, epochs 200
+SiSnrTrainer: lr=5.000e-04, weight_decay=1.0e-05, clipnorm=1
+I0000 00:00:1790945878.354698 2680213 cuda_dnn.cc:461] Loaded cuDNN version 91002
+START FROM EPOCH 0, LOSS = 0.1056 (SI-SDR -0.11 dB)
+Processed 200 batches (loss = -1.20)...
+Processed 400 batches (loss = -2.09)...
+Processed 600 batches (loss = -2.82)...
+Processed 800 batches (loss = -3.48)...
+Loss(time/N, lr=5.000e-04) - Epoch  1: train = -2.5647 (2.56 dB, 28.42m/900) | dev = -2.5343 (2.53 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -4.27)...
+Processed 400 batches (loss = -4.74)...
+Processed 600 batches (loss = -5.34)...
+Processed 800 batches (loss = -5.59)...
+Loss(time/N, lr=5.000e-04) - Epoch  2: train = -5.0861 (5.09 dB, 28.11m/900) | dev = -3.3465 (3.35 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -6.10)...
+Processed 400 batches (loss = -6.34)...
+Processed 600 batches (loss = -6.73)...
+Processed 800 batches (loss = -6.99)...
+Loss(time/N, lr=4.900e-04) - Epoch  3: train = -6.5952 (6.60 dB, 28.15m/900) | dev = -5.5640 (5.56 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -7.21)...
+Processed 400 batches (loss = -7.61)...
+Processed 600 batches (loss = -7.71)...
+Processed 800 batches (loss = -7.79)...
+Loss(time/N, lr=4.900e-04) - Epoch  4: train = -7.5912 (7.59 dB, 28.14m/900) | dev = -6.7550 (6.75 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -8.25)...
+Processed 400 batches (loss = -8.34)...
+Processed 600 batches (loss = -8.30)...
+Processed 800 batches (loss = -8.49)...
+Loss(time/N, lr=4.802e-04) - Epoch  5: train = -8.3646 (8.36 dB, 28.20m/900) | dev = -6.5047 (6.50 dB, 0.61m/69) | no impr, best = -6.7550
+Processed 200 batches (loss = -8.92)...
+Processed 400 batches (loss = -8.74)...
+Processed 600 batches (loss = -8.87)...
+Processed 800 batches (loss = -8.95)...
+Loss(time/N, lr=4.802e-04) - Epoch  6: train = -8.8715 (8.87 dB, 28.14m/900) | dev = -5.6999 (5.70 dB, 0.62m/69) | no impr, best = -6.7550
+Processed 200 batches (loss = -9.30)...
+Processed 400 batches (loss = -9.18)...
+Processed 600 batches (loss = -9.57)...
+Processed 800 batches (loss = -9.48)...
+Loss(time/N, lr=4.706e-04) - Epoch  7: train = -9.4224 (9.42 dB, 28.22m/900) | dev = -7.3500 (7.35 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -9.88)...
+Processed 400 batches (loss = -9.79)...
+Processed 600 batches (loss = -9.73)...
+Processed 800 batches (loss = -9.91)...
+Loss(time/N, lr=4.706e-04) - Epoch  8: train = -9.8470 (9.85 dB, 28.21m/900) | dev = -7.3802 (7.38 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -10.19)...
+Processed 400 batches (loss = -10.14)...
+Processed 600 batches (loss = -10.20)...
+Processed 800 batches (loss = -10.02)...
+Loss(time/N, lr=4.612e-04) - Epoch  9: train = -10.1545 (10.15 dB, 28.27m/900) | dev = -8.3117 (8.31 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -10.62)...
+Processed 400 batches (loss = -10.34)...
+Processed 600 batches (loss = -10.41)...
+Processed 800 batches (loss = -10.49)...
+Loss(time/N, lr=4.612e-04) - Epoch 10: train = -10.4674 (10.47 dB, 28.24m/900) | dev = -6.7817 (6.78 dB, 0.62m/69) | no impr, best = -8.3117
+Processed 200 batches (loss = -10.71)...
+Processed 400 batches (loss = -10.86)...
+Processed 600 batches (loss = -10.81)...
+Processed 800 batches (loss = -10.69)...
+Loss(time/N, lr=4.520e-04) - Epoch 11: train = -10.7822 (10.78 dB, 28.20m/900) | dev = -8.7398 (8.74 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -11.14)...
+Processed 400 batches (loss = -11.04)...
+Processed 600 batches (loss = -10.83)...
+Processed 800 batches (loss = -11.03)...
+Loss(time/N, lr=4.520e-04) - Epoch 12: train = -10.9930 (10.99 dB, 28.23m/900) | dev = -9.1065 (9.11 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -11.13)...
+Processed 400 batches (loss = -11.26)...
+Processed 600 batches (loss = -11.28)...
+Processed 800 batches (loss = -11.32)...
+Loss(time/N, lr=4.429e-04) - Epoch 13: train = -11.2349 (11.23 dB, 28.31m/900) | dev = -8.4141 (8.41 dB, 0.62m/69) | no impr, best = -9.1065
+Processed 200 batches (loss = -11.48)...
+Processed 400 batches (loss = -11.47)...
+Processed 600 batches (loss = -11.23)...
+Processed 800 batches (loss = -11.56)...
+Loss(time/N, lr=4.429e-04) - Epoch 14: train = -11.4345 (11.43 dB, 28.25m/900) | dev = -8.4497 (8.45 dB, 0.62m/69) | no impr, best = -9.1065
+Processed 200 batches (loss = -11.58)...
+Processed 400 batches (loss = -11.59)...
+Processed 600 batches (loss = -11.58)...
+Processed 800 batches (loss = -11.63)...
+Loss(time/N, lr=4.341e-04) - Epoch 15: train = -11.6101 (11.61 dB, 28.20m/900) | dev = -3.8383 (3.84 dB, 0.61m/69) | no impr, best = -9.1065
+Processed 200 batches (loss = -11.81)...
+Processed 400 batches (loss = -11.82)...
+Processed 600 batches (loss = -11.80)...
+Processed 800 batches (loss = -11.74)...
+Loss(time/N, lr=4.341e-04) - Epoch 16: train = -11.8107 (11.81 dB, 28.20m/900) | dev = -9.7209 (9.72 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -11.99)...
+Processed 400 batches (loss = -11.92)...
+Processed 600 batches (loss = -12.04)...
+Processed 800 batches (loss = -11.88)...
+Loss(time/N, lr=4.254e-04) - Epoch 17: train = -11.9620 (11.96 dB, 28.33m/900) | dev = -9.3547 (9.35 dB, 0.62m/69) | no impr, best = -9.7209
+Processed 200 batches (loss = -12.04)...
+Processed 400 batches (loss = -12.06)...
+Processed 600 batches (loss = -12.09)...
+Processed 800 batches (loss = -12.15)...
+Loss(time/N, lr=4.254e-04) - Epoch 18: train = -12.0801 (12.08 dB, 28.28m/900) | dev = -9.5251 (9.53 dB, 0.62m/69) | no impr, best = -9.7209
+Processed 200 batches (loss = -12.32)...
+Processed 400 batches (loss = -12.43)...
+Processed 600 batches (loss = -12.20)...
+Processed 800 batches (loss = -12.17)...
+Loss(time/N, lr=4.169e-04) - Epoch 19: train = -12.2949 (12.29 dB, 28.28m/900) | dev = -9.9019 (9.90 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -12.49)...
+Processed 400 batches (loss = -12.49)...
+Processed 600 batches (loss = -12.55)...
+Processed 800 batches (loss = -12.29)...
+Loss(time/N, lr=4.169e-04) - Epoch 20: train = -12.4285 (12.43 dB, 28.30m/900) | dev = -9.8433 (9.84 dB, 0.62m/69) | no impr, best = -9.9019
+Processed 200 batches (loss = -12.67)...
+Processed 400 batches (loss = -12.62)...
+Processed 600 batches (loss = -12.40)...
+Processed 800 batches (loss = -12.62)...
+Loss(time/N, lr=4.085e-04) - Epoch 21: train = -12.5685 (12.57 dB, 28.25m/900) | dev = -10.0904 (10.09 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -12.72)...
+Processed 400 batches (loss = -12.64)...
+Processed 600 batches (loss = -12.64)...
+Processed 800 batches (loss = -12.76)...
+Loss(time/N, lr=4.085e-04) - Epoch 22: train = -12.6975 (12.70 dB, 28.30m/900) | dev = -10.3162 (10.32 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -12.92)...
+Processed 400 batches (loss = -12.87)...
+Processed 600 batches (loss = -12.73)...
+Processed 800 batches (loss = -12.73)...
+Loss(time/N, lr=4.004e-04) - Epoch 23: train = -12.8017 (12.80 dB, 28.29m/900) | dev = -8.5407 (8.54 dB, 0.62m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -12.87)...
+Processed 400 batches (loss = -13.03)...
+Processed 600 batches (loss = -13.01)...
+Processed 800 batches (loss = -12.95)...
+Loss(time/N, lr=4.004e-04) - Epoch 24: train = -12.9561 (12.96 dB, 28.23m/900) | dev = -8.4794 (8.48 dB, 0.62m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -13.05)...
+Processed 400 batches (loss = -13.05)...
+Processed 600 batches (loss = -13.13)...
+Processed 800 batches (loss = -13.08)...
+Loss(time/N, lr=3.924e-04) - Epoch 25: train = -13.0725 (13.07 dB, 28.26m/900) | dev = -10.1523 (10.15 dB, 0.62m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -13.17)...
+Processed 400 batches (loss = -13.27)...
+Processed 600 batches (loss = -13.14)...
+Processed 800 batches (loss = -13.10)...
+Loss(time/N, lr=3.924e-04) - Epoch 26: train = -13.1682 (13.17 dB, 28.18m/900) | dev = -9.8670 (9.87 dB, 0.62m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -13.41)...
+Processed 400 batches (loss = -13.16)...
+Processed 600 batches (loss = -13.19)...
+Processed 800 batches (loss = -13.36)...
+Loss(time/N, lr=3.845e-04) - Epoch 27: train = -13.2808 (13.28 dB, 28.20m/900) | dev = -9.8190 (9.82 dB, 0.62m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -13.44)...
+Processed 400 batches (loss = -13.24)...
+Processed 600 batches (loss = -13.35)...
+Processed 800 batches (loss = -13.38)...
+Loss(time/N, lr=3.845e-04) - Epoch 28: train = -13.3573 (13.36 dB, 28.14m/900) | dev = -8.9891 (8.99 dB, 0.61m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -13.59)...
+Processed 400 batches (loss = -13.40)...
+Processed 600 batches (loss = -13.45)...
+Processed 800 batches (loss = -13.43)...
+Loss(time/N, lr=3.768e-04) - Epoch 29: train = -13.4573 (13.46 dB, 27.92m/900) | dev = -9.8620 (9.86 dB, 0.61m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -13.57)...
+Processed 400 batches (loss = -13.66)...
+Processed 600 batches (loss = -13.53)...
+Processed 800 batches (loss = -13.57)...
+Loss(time/N, lr=3.768e-04) - Epoch 30: train = -13.5267 (13.53 dB, 27.83m/900) | dev = -10.0904 (10.09 dB, 0.61m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -13.73)...
+Processed 400 batches (loss = -13.74)...
+Processed 600 batches (loss = -13.66)...
+Processed 800 batches (loss = -13.49)...
+Loss(time/N, lr=3.693e-04) - Epoch 31: train = -13.6427 (13.64 dB, 27.91m/900) | dev = -10.2295 (10.23 dB, 0.62m/69) | no impr, best = -10.3162
+Processed 200 batches (loss = -13.85)...
+Processed 400 batches (loss = -13.62)...
+Processed 600 batches (loss = -13.65)...
+Processed 800 batches (loss = -13.74)...
+Loss(time/N, lr=3.693e-04) - Epoch 32: train = -13.7139 (13.71 dB, 28.32m/900) | dev = -10.6554 (10.66 dB, 0.63m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -13.86)...
+Processed 400 batches (loss = -13.70)...
+Processed 600 batches (loss = -13.85)...
+Processed 800 batches (loss = -13.80)...
+Loss(time/N, lr=3.619e-04) - Epoch 33: train = -13.7962 (13.80 dB, 27.99m/900) | dev = -9.9852 (9.99 dB, 0.62m/69) | no impr, best = -10.6554
+Processed 200 batches (loss = -13.79)...
+Processed 400 batches (loss = -13.84)...
+Processed 600 batches (loss = -13.87)...
+Processed 800 batches (loss = -13.98)...
+Loss(time/N, lr=3.619e-04) - Epoch 34: train = -13.8755 (13.88 dB, 27.95m/900) | dev = -10.7246 (10.72 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -14.08)...
+Processed 400 batches (loss = -13.87)...
+Processed 600 batches (loss = -13.96)...
+Processed 800 batches (loss = -13.82)...
+Loss(time/N, lr=3.547e-04) - Epoch 35: train = -13.9399 (13.94 dB, 27.87m/900) | dev = -10.2934 (10.29 dB, 0.62m/69) | no impr, best = -10.7246
+Processed 200 batches (loss = -14.06)...
+Processed 400 batches (loss = -14.02)...
+Processed 600 batches (loss = -14.01)...
+Processed 800 batches (loss = -13.95)...
+Loss(time/N, lr=3.547e-04) - Epoch 36: train = -14.0150 (14.01 dB, 27.95m/900) | dev = -10.9111 (10.91 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -14.09)...
+Processed 400 batches (loss = -14.09)...
+Processed 600 batches (loss = -14.13)...
+Processed 800 batches (loss = -14.13)...
+Loss(time/N, lr=3.476e-04) - Epoch 37: train = -14.1035 (14.10 dB, 28.16m/900) | dev = -10.8120 (10.81 dB, 0.62m/69) | no impr, best = -10.9111
+Processed 200 batches (loss = -13.98)...
+Processed 400 batches (loss = -14.29)...
+Processed 600 batches (loss = -14.16)...
+Processed 800 batches (loss = -14.05)...
+Loss(time/N, lr=3.476e-04) - Epoch 38: train = -14.1178 (14.12 dB, 28.38m/900) | dev = -11.0011 (11.00 dB, 0.63m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -14.34)...
+Processed 400 batches (loss = -14.19)...
+Processed 600 batches (loss = -14.23)...
+Processed 800 batches (loss = -14.07)...
+Loss(time/N, lr=3.406e-04) - Epoch 39: train = -14.2136 (14.21 dB, 28.06m/900) | dev = -11.0493 (11.05 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -14.31)...
+Processed 400 batches (loss = -14.37)...
+Processed 600 batches (loss = -14.24)...
+Processed 800 batches (loss = -14.27)...
+Loss(time/N, lr=3.406e-04) - Epoch 40: train = -14.2770 (14.28 dB, 27.95m/900) | dev = -10.6658 (10.67 dB, 0.62m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.32)...
+Processed 400 batches (loss = -14.35)...
+Processed 600 batches (loss = -14.31)...
+Processed 800 batches (loss = -14.33)...
+Loss(time/N, lr=3.338e-04) - Epoch 41: train = -14.3358 (14.34 dB, 27.93m/900) | dev = -10.9324 (10.93 dB, 0.62m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.52)...
+Processed 400 batches (loss = -14.29)...
+Processed 600 batches (loss = -14.47)...
+Processed 800 batches (loss = -14.26)...
+Loss(time/N, lr=3.338e-04) - Epoch 42: train = -14.3906 (14.39 dB, 27.91m/900) | dev = -10.2958 (10.30 dB, 0.62m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.42)...
+Processed 400 batches (loss = -14.48)...
+Processed 600 batches (loss = -14.53)...
+Processed 800 batches (loss = -14.50)...
+Loss(time/N, lr=3.271e-04) - Epoch 43: train = -14.4646 (14.46 dB, 27.88m/900) | dev = -9.5930 (9.59 dB, 0.62m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.51)...
+Processed 400 batches (loss = -14.53)...
+Processed 600 batches (loss = -14.44)...
+Processed 800 batches (loss = -14.45)...
+Loss(time/N, lr=3.271e-04) - Epoch 44: train = -14.4930 (14.49 dB, 27.88m/900) | dev = -10.6501 (10.65 dB, 0.61m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.60)...
+Processed 400 batches (loss = -14.70)...
+Processed 600 batches (loss = -14.45)...
+Processed 800 batches (loss = -14.59)...
+Loss(time/N, lr=3.206e-04) - Epoch 45: train = -14.5698 (14.57 dB, 27.83m/900) | dev = -10.9540 (10.95 dB, 0.61m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.67)...
+Processed 400 batches (loss = -14.63)...
+Processed 600 batches (loss = -14.52)...
+Processed 800 batches (loss = -14.55)...
+Loss(time/N, lr=3.206e-04) - Epoch 46: train = -14.5869 (14.59 dB, 27.91m/900) | dev = -10.9840 (10.98 dB, 0.61m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.73)...
+Processed 400 batches (loss = -14.65)...
+Processed 600 batches (loss = -14.68)...
+Processed 800 batches (loss = -14.58)...
+Loss(time/N, lr=3.142e-04) - Epoch 47: train = -14.6568 (14.66 dB, 27.90m/900) | dev = -9.9852 (9.99 dB, 0.61m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.62)...
+Processed 400 batches (loss = -14.79)...
+Processed 600 batches (loss = -14.75)...
+Processed 800 batches (loss = -14.76)...
+Loss(time/N, lr=3.142e-04) - Epoch 48: train = -14.7214 (14.72 dB, 27.86m/900) | dev = -11.0130 (11.01 dB, 0.61m/69) | no impr, best = -11.0493
+Processed 200 batches (loss = -14.71)...
+Processed 400 batches (loss = -14.87)...
+Processed 600 batches (loss = -14.83)...
+Processed 800 batches (loss = -14.60)...
+Loss(time/N, lr=3.079e-04) - Epoch 49: train = -14.7455 (14.75 dB, 27.91m/900) | dev = -11.1314 (11.13 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -14.77)...
+Processed 400 batches (loss = -14.86)...
+Processed 600 batches (loss = -14.66)...
+Processed 800 batches (loss = -14.88)...
+Loss(time/N, lr=3.079e-04) - Epoch 50: train = -14.7882 (14.79 dB, 27.93m/900) | dev = -11.1239 (11.12 dB, 0.61m/69) | no impr, best = -11.1314
+Processed 200 batches (loss = -14.81)...
+Processed 400 batches (loss = -14.85)...
+Processed 600 batches (loss = -14.86)...
+Processed 800 batches (loss = -14.93)...
+Loss(time/N, lr=3.017e-04) - Epoch 51: train = -14.8617 (14.86 dB, 27.80m/900) | dev = -11.2361 (11.24 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -14.90)...
+Processed 400 batches (loss = -14.86)...
+Processed 600 batches (loss = -14.90)...
+Processed 800 batches (loss = -14.74)...
+Loss(time/N, lr=3.017e-04) - Epoch 52: train = -14.8488 (14.85 dB, 27.88m/900) | dev = -10.6557 (10.66 dB, 0.61m/69) | no impr, best = -11.2361
+Processed 200 batches (loss = -14.95)...
+Processed 400 batches (loss = -14.97)...
+Processed 600 batches (loss = -14.92)...
+Processed 800 batches (loss = -14.89)...
+Loss(time/N, lr=2.957e-04) - Epoch 53: train = -14.9164 (14.92 dB, 27.92m/900) | dev = -11.0116 (11.01 dB, 0.62m/69) | no impr, best = -11.2361
+Processed 200 batches (loss = -15.00)...
+Processed 400 batches (loss = -14.98)...
+Processed 600 batches (loss = -14.91)...
+Processed 800 batches (loss = -14.86)...
+Loss(time/N, lr=2.957e-04) - Epoch 54: train = -14.9332 (14.93 dB, 27.95m/900) | dev = -11.2989 (11.30 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -14.99)...
+Processed 400 batches (loss = -14.99)...
+Processed 600 batches (loss = -15.03)...
+Processed 800 batches (loss = -14.93)...
+Loss(time/N, lr=2.898e-04) - Epoch 55: train = -14.9882 (14.99 dB, 27.93m/900) | dev = -10.4310 (10.43 dB, 0.61m/69) | no impr, best = -11.2989
+Processed 200 batches (loss = -14.92)...
+Processed 400 batches (loss = -15.06)...
+Processed 600 batches (loss = -15.08)...
+Processed 800 batches (loss = -15.09)...
+Loss(time/N, lr=2.898e-04) - Epoch 56: train = -15.0325 (15.03 dB, 27.96m/900) | dev = -11.0901 (11.09 dB, 0.62m/69) | no impr, best = -11.2989
+Processed 200 batches (loss = -15.08)...
+Processed 400 batches (loss = -15.11)...
+Processed 600 batches (loss = -15.09)...
+Processed 800 batches (loss = -14.97)...
+Loss(time/N, lr=2.840e-04) - Epoch 57: train = -15.0610 (15.06 dB, 27.94m/900) | dev = -10.9231 (10.92 dB, 0.61m/69) | no impr, best = -11.2989
+Processed 200 batches (loss = -15.13)...
+Processed 400 batches (loss = -15.06)...
+Processed 600 batches (loss = -15.07)...
+Processed 800 batches (loss = -15.02)...
+Loss(time/N, lr=2.840e-04) - Epoch 58: train = -15.0762 (15.08 dB, 28.21m/900) | dev = -11.2288 (11.23 dB, 0.63m/69) | no impr, best = -11.2989
+Processed 200 batches (loss = -15.14)...
+Processed 400 batches (loss = -15.13)...
+Processed 600 batches (loss = -15.10)...
+Processed 800 batches (loss = -15.21)...
+Loss(time/N, lr=2.783e-04) - Epoch 59: train = -15.1418 (15.14 dB, 28.22m/900) | dev = -11.3719 (11.37 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -15.18)...
+Processed 400 batches (loss = -15.10)...
+Processed 600 batches (loss = -15.19)...
+Processed 800 batches (loss = -15.14)...
+Loss(time/N, lr=2.783e-04) - Epoch 60: train = -15.1660 (15.17 dB, 27.94m/900) | dev = -10.8437 (10.84 dB, 0.61m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.24)...
+Processed 400 batches (loss = -15.19)...
+Processed 600 batches (loss = -15.19)...
+Processed 800 batches (loss = -15.18)...
+Loss(time/N, lr=2.727e-04) - Epoch 61: train = -15.1863 (15.19 dB, 27.93m/900) | dev = -10.2344 (10.23 dB, 0.61m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.27)...
+Processed 400 batches (loss = -15.25)...
+Processed 600 batches (loss = -15.18)...
+Processed 800 batches (loss = -15.15)...
+Loss(time/N, lr=2.727e-04) - Epoch 62: train = -15.2055 (15.21 dB, 27.87m/900) | dev = -11.2983 (11.30 dB, 0.62m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.28)...
+Processed 400 batches (loss = -15.13)...
+Processed 600 batches (loss = -15.27)...
+Processed 800 batches (loss = -15.36)...
+Loss(time/N, lr=2.673e-04) - Epoch 63: train = -15.2610 (15.26 dB, 27.91m/900) | dev = -11.2044 (11.20 dB, 0.61m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.38)...
+Processed 400 batches (loss = -15.34)...
+Processed 600 batches (loss = -15.38)...
+Processed 800 batches (loss = -15.22)...
+Loss(time/N, lr=2.673e-04) - Epoch 64: train = -15.3097 (15.31 dB, 27.95m/900) | dev = -9.7063 (9.71 dB, 0.61m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.32)...
+Processed 400 batches (loss = -15.32)...
+Processed 600 batches (loss = -15.33)...
+Processed 800 batches (loss = -15.26)...
+Loss(time/N, lr=2.619e-04) - Epoch 65: train = -15.3180 (15.32 dB, 27.94m/900) | dev = -11.0002 (11.00 dB, 0.62m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.32)...
+Processed 400 batches (loss = -15.36)...
+Processed 600 batches (loss = -15.41)...
+Processed 800 batches (loss = -15.34)...
+Loss(time/N, lr=2.619e-04) - Epoch 66: train = -15.3509 (15.35 dB, 27.92m/900) | dev = -11.3295 (11.33 dB, 0.61m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.40)...
+Processed 400 batches (loss = -15.39)...
+Processed 600 batches (loss = -15.40)...
+Processed 800 batches (loss = -15.38)...
+Loss(time/N, lr=2.567e-04) - Epoch 67: train = -15.3890 (15.39 dB, 27.94m/900) | dev = -11.1796 (11.18 dB, 0.62m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.44)...
+Processed 400 batches (loss = -15.34)...
+Processed 600 batches (loss = -15.36)...
+Processed 800 batches (loss = -15.46)...
+Loss(time/N, lr=2.567e-04) - Epoch 68: train = -15.4084 (15.41 dB, 27.93m/900) | dev = -11.2639 (11.26 dB, 0.62m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.55)...
+Processed 400 batches (loss = -15.35)...
+Processed 600 batches (loss = -15.39)...
+Processed 800 batches (loss = -15.45)...
+Loss(time/N, lr=2.516e-04) - Epoch 69: train = -15.4325 (15.43 dB, 27.86m/900) | dev = -11.1268 (11.13 dB, 0.61m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.41)...
+Processed 400 batches (loss = -15.47)...
+Processed 600 batches (loss = -15.43)...
+Processed 800 batches (loss = -15.53)...
+Loss(time/N, lr=2.516e-04) - Epoch 70: train = -15.4557 (15.46 dB, 27.84m/900) | dev = -10.7920 (10.79 dB, 0.62m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.55)...
+Processed 400 batches (loss = -15.46)...
+Processed 600 batches (loss = -15.49)...
+Processed 800 batches (loss = -15.48)...
+Loss(time/N, lr=2.465e-04) - Epoch 71: train = -15.4860 (15.49 dB, 27.88m/900) | dev = -11.2979 (11.30 dB, 0.62m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.54)...
+Processed 400 batches (loss = -15.48)...
+Processed 600 batches (loss = -15.43)...
+Processed 800 batches (loss = -15.54)...
+Loss(time/N, lr=2.465e-04) - Epoch 72: train = -15.4908 (15.49 dB, 27.92m/900) | dev = -10.2287 (10.23 dB, 0.61m/69) | no impr, best = -11.3719
+Processed 200 batches (loss = -15.60)...
+Processed 400 batches (loss = -15.55)...
+Processed 600 batches (loss = -15.60)...
+Processed 800 batches (loss = -15.43)...
+Loss(time/N, lr=2.416e-04) - Epoch 73: train = -15.5357 (15.54 dB, 27.81m/900) | dev = -11.3940 (11.39 dB, 0.62m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -15.59)...
+Processed 400 batches (loss = -15.52)...
+Processed 600 batches (loss = -15.52)...
+Processed 800 batches (loss = -15.51)...
+Loss(time/N, lr=2.416e-04) - Epoch 74: train = -15.5437 (15.54 dB, 28.02m/900) | dev = -11.5586 (11.56 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -15.70)...
+Processed 400 batches (loss = -15.50)...
+Processed 600 batches (loss = -15.55)...
+Processed 800 batches (loss = -15.56)...
+Loss(time/N, lr=2.368e-04) - Epoch 75: train = -15.5876 (15.59 dB, 27.95m/900) | dev = -11.4417 (11.44 dB, 0.61m/69) | no impr, best = -11.5586
+Processed 200 batches (loss = -15.66)...
+Processed 400 batches (loss = -15.59)...
+Processed 600 batches (loss = -15.57)...
+Processed 800 batches (loss = -15.53)...
+Loss(time/N, lr=2.368e-04) - Epoch 76: train = -15.5907 (15.59 dB, 27.79m/900) | dev = -11.0315 (11.03 dB, 0.61m/69) | no impr, best = -11.5586
+Processed 200 batches (loss = -15.74)...
+Processed 400 batches (loss = -15.70)...
+Processed 600 batches (loss = -15.60)...
+Processed 800 batches (loss = -15.56)...
+Loss(time/N, lr=2.320e-04) - Epoch 77: train = -15.6310 (15.63 dB, 27.92m/900) | dev = -11.5960 (11.60 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -15.61)...
+Processed 400 batches (loss = -15.69)...
+Processed 600 batches (loss = -15.63)...
+Processed 800 batches (loss = -15.68)...
+Loss(time/N, lr=2.320e-04) - Epoch 78: train = -15.6573 (15.66 dB, 27.93m/900) | dev = -11.1297 (11.13 dB, 0.61m/69) | no impr, best = -11.5960
+Processed 200 batches (loss = -15.61)...
+Processed 400 batches (loss = -15.73)...
+Processed 600 batches (loss = -15.71)...
+Processed 800 batches (loss = -15.63)...
+Loss(time/N, lr=2.274e-04) - Epoch 79: train = -15.6660 (15.67 dB, 27.93m/900) | dev = -11.3129 (11.31 dB, 0.61m/69) | no impr, best = -11.5960
+Processed 200 batches (loss = -15.76)...
+Processed 400 batches (loss = -15.72)...
+Processed 600 batches (loss = -15.75)...
+Processed 800 batches (loss = -15.58)...
+Loss(time/N, lr=2.274e-04) - Epoch 80: train = -15.6977 (15.70 dB, 27.91m/900) | dev = -11.4562 (11.46 dB, 0.62m/69) | no impr, best = -11.5960
+Processed 200 batches (loss = -15.70)...
+Processed 400 batches (loss = -15.74)...
+Processed 600 batches (loss = -15.70)...
+Processed 800 batches (loss = -15.74)...
+Loss(time/N, lr=2.229e-04) - Epoch 81: train = -15.7215 (15.72 dB, 27.89m/900) | dev = -11.5409 (11.54 dB, 0.62m/69) | no impr, best = -11.5960
+Processed 200 batches (loss = -15.77)...
+Processed 400 batches (loss = -15.78)...
+Processed 600 batches (loss = -15.79)...
+Processed 800 batches (loss = -15.64)...
+Loss(time/N, lr=2.229e-04) - Epoch 82: train = -15.7394 (15.74 dB, 27.93m/900) | dev = -11.4492 (11.45 dB, 0.62m/69) | no impr, best = -11.5960
+Processed 200 batches (loss = -15.76)...
+Processed 400 batches (loss = -15.74)...
+Processed 600 batches (loss = -15.85)...
+Processed 800 batches (loss = -15.69)...
+Loss(time/N, lr=2.184e-04) - Epoch 83: train = -15.7555 (15.76 dB, 27.83m/900) | dev = -11.7667 (11.77 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -15.83)...
+Processed 400 batches (loss = -15.75)...
+Processed 600 batches (loss = -15.76)...
+Processed 800 batches (loss = -15.81)...
+Loss(time/N, lr=2.184e-04) - Epoch 84: train = -15.7783 (15.78 dB, 27.88m/900) | dev = -11.8130 (11.81 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -15.93)...
+Processed 400 batches (loss = -15.84)...
+Processed 600 batches (loss = -15.73)...
+Processed 800 batches (loss = -15.70)...
+Loss(time/N, lr=2.140e-04) - Epoch 85: train = -15.7956 (15.80 dB, 27.95m/900) | dev = -11.5757 (11.58 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.79)...
+Processed 400 batches (loss = -15.84)...
+Processed 600 batches (loss = -15.82)...
+Processed 800 batches (loss = -15.79)...
+Loss(time/N, lr=2.140e-04) - Epoch 86: train = -15.8065 (15.81 dB, 27.90m/900) | dev = -11.5222 (11.52 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.81)...
+Processed 400 batches (loss = -15.90)...
+Processed 600 batches (loss = -15.86)...
+Processed 800 batches (loss = -15.86)...
+Loss(time/N, lr=2.097e-04) - Epoch 87: train = -15.8517 (15.85 dB, 27.89m/900) | dev = -11.4716 (11.47 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.86)...
+Processed 400 batches (loss = -15.84)...
+Processed 600 batches (loss = -15.85)...
+Processed 800 batches (loss = -15.82)...
+Loss(time/N, lr=2.097e-04) - Epoch 88: train = -15.8472 (15.85 dB, 27.91m/900) | dev = -11.3826 (11.38 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.89)...
+Processed 400 batches (loss = -15.85)...
+Processed 600 batches (loss = -15.85)...
+Processed 800 batches (loss = -15.88)...
+Loss(time/N, lr=2.055e-04) - Epoch 89: train = -15.8614 (15.86 dB, 27.93m/900) | dev = -11.7466 (11.75 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.95)...
+Processed 400 batches (loss = -15.89)...
+Processed 600 batches (loss = -15.85)...
+Processed 800 batches (loss = -15.79)...
+Loss(time/N, lr=2.055e-04) - Epoch 90: train = -15.8850 (15.88 dB, 27.91m/900) | dev = -11.5784 (11.58 dB, 0.62m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.96)...
+Processed 400 batches (loss = -15.90)...
+Processed 600 batches (loss = -15.93)...
+Processed 800 batches (loss = -15.90)...
+Loss(time/N, lr=2.014e-04) - Epoch 91: train = -15.9112 (15.91 dB, 27.92m/900) | dev = -11.6985 (11.70 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.83)...
+Processed 400 batches (loss = -15.89)...
+Processed 600 batches (loss = -16.00)...
+Processed 800 batches (loss = -15.96)...
+Loss(time/N, lr=2.014e-04) - Epoch 92: train = -15.9232 (15.92 dB, 27.88m/900) | dev = -11.7521 (11.75 dB, 0.62m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.92)...
+Processed 400 batches (loss = -16.04)...
+Processed 600 batches (loss = -15.85)...
+Processed 800 batches (loss = -15.92)...
+Loss(time/N, lr=1.974e-04) - Epoch 93: train = -15.9478 (15.95 dB, 27.84m/900) | dev = -11.3770 (11.38 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -15.93)...
+Processed 400 batches (loss = -15.96)...
+Processed 600 batches (loss = -15.89)...
+Processed 800 batches (loss = -16.02)...
+Loss(time/N, lr=1.974e-04) - Epoch 94: train = -15.9511 (15.95 dB, 27.80m/900) | dev = -11.5780 (11.58 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -16.02)...
+Processed 400 batches (loss = -16.01)...
+Processed 600 batches (loss = -15.97)...
+Processed 800 batches (loss = -15.94)...
+Loss(time/N, lr=1.935e-04) - Epoch 95: train = -15.9820 (15.98 dB, 27.89m/900) | dev = -11.6204 (11.62 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -16.01)...
+Processed 400 batches (loss = -16.04)...
+Processed 600 batches (loss = -15.99)...
+Processed 800 batches (loss = -15.93)...
+Loss(time/N, lr=1.935e-04) - Epoch 96: train = -15.9770 (15.98 dB, 27.86m/900) | dev = -11.5287 (11.53 dB, 0.62m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -16.09)...
+Processed 400 batches (loss = -16.04)...
+Processed 600 batches (loss = -15.99)...
+Processed 800 batches (loss = -16.02)...
+Loss(time/N, lr=1.896e-04) - Epoch 97: train = -16.0102 (16.01 dB, 27.96m/900) | dev = -11.5866 (11.59 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -16.05)...
+Processed 400 batches (loss = -16.03)...
+Processed 600 batches (loss = -16.04)...
+Processed 800 batches (loss = -15.94)...
+Loss(time/N, lr=1.896e-04) - Epoch 98: train = -16.0209 (16.02 dB, 27.93m/900) | dev = -11.7148 (11.71 dB, 0.62m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -16.08)...
+Processed 400 batches (loss = -16.07)...
+Processed 600 batches (loss = -16.01)...
+Processed 800 batches (loss = -15.98)...
+Loss(time/N, lr=1.858e-04) - Epoch 99: train = -16.0349 (16.03 dB, 27.84m/900) | dev = -11.6845 (11.68 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -16.04)...
+Processed 400 batches (loss = -16.12)...
+Processed 600 batches (loss = -16.01)...
+Processed 800 batches (loss = -16.08)...
+Loss(time/N, lr=1.858e-04) - Epoch 100: train = -16.0537 (16.05 dB, 27.87m/900) | dev = -11.7030 (11.70 dB, 0.61m/69) | no impr, best = -11.8130
+Processed 200 batches (loss = -16.09)...
+Processed 400 batches (loss = -16.06)...
+Processed 600 batches (loss = -16.09)...
+Processed 800 batches (loss = -16.04)...
+Loss(time/N, lr=1.821e-04) - Epoch 101: train = -16.0740 (16.07 dB, 27.95m/900) | dev = -11.8666 (11.87 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -16.08)...
+Processed 400 batches (loss = -16.13)...
+Processed 600 batches (loss = -16.10)...
+Processed 800 batches (loss = -16.13)...
+Loss(time/N, lr=1.639e-04) - Epoch 102: train = -16.1014 (16.10 dB, 27.93m/900) | dev = -11.8125 (11.81 dB, 0.61m/69) | no impr, best = -11.8666
+Processed 200 batches (loss = -16.10)...
+Processed 400 batches (loss = -16.17)...
+Processed 600 batches (loss = -16.13)...
+Processed 800 batches (loss = -16.21)...
+Loss(time/N, lr=1.475e-04) - Epoch 103: train = -16.1436 (16.14 dB, 27.84m/900) | dev = -11.5615 (11.56 dB, 0.61m/69) | no impr, best = -11.8666
+Processed 200 batches (loss = -16.20)...
+Processed 400 batches (loss = -16.20)...
+Processed 600 batches (loss = -16.22)...
+Processed 800 batches (loss = -16.10)...
+Loss(time/N, lr=1.327e-04) - Epoch 104: train = -16.1737 (16.17 dB, 27.83m/900) | dev = -11.9279 (11.93 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -16.20)...
+Processed 400 batches (loss = -16.21)...
+Processed 600 batches (loss = -16.16)...
+Processed 800 batches (loss = -16.20)...
+Loss(time/N, lr=1.195e-04) - Epoch 105: train = -16.2001 (16.20 dB, 27.84m/900) | dev = -11.7453 (11.75 dB, 0.61m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.22)...
+Processed 400 batches (loss = -16.24)...
+Processed 600 batches (loss = -16.19)...
+Processed 800 batches (loss = -16.22)...
+Loss(time/N, lr=1.075e-04) - Epoch 106: train = -16.2245 (16.22 dB, 27.84m/900) | dev = -11.8034 (11.80 dB, 0.61m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.27)...
+Processed 400 batches (loss = -16.32)...
+Processed 600 batches (loss = -16.22)...
+Processed 800 batches (loss = -16.25)...
+Loss(time/N, lr=9.677e-05) - Epoch 107: train = -16.2562 (16.26 dB, 27.89m/900) | dev = -11.7387 (11.74 dB, 0.61m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.32)...
+Processed 400 batches (loss = -16.30)...
+Processed 600 batches (loss = -16.14)...
+Processed 800 batches (loss = -16.38)...
+Loss(time/N, lr=8.709e-05) - Epoch 108: train = -16.2822 (16.28 dB, 27.96m/900) | dev = -11.7886 (11.79 dB, 0.62m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.36)...
+Processed 400 batches (loss = -16.28)...
+Processed 600 batches (loss = -16.25)...
+Processed 800 batches (loss = -16.31)...
+Loss(time/N, lr=7.838e-05) - Epoch 109: train = -16.2972 (16.30 dB, 27.79m/900) | dev = -11.8945 (11.89 dB, 0.61m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.40)...
+Processed 400 batches (loss = -16.18)...
+Processed 600 batches (loss = -16.29)...
+Processed 800 batches (loss = -16.33)...
+Loss(time/N, lr=7.054e-05) - Epoch 110: train = -16.3048 (16.30 dB, 27.85m/900) | dev = -11.8805 (11.88 dB, 0.61m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.26)...
+Processed 400 batches (loss = -16.43)...
+Processed 600 batches (loss = -16.28)...
+Processed 800 batches (loss = -16.34)...
+Loss(time/N, lr=6.349e-05) - Epoch 111: train = -16.3276 (16.33 dB, 27.87m/900) | dev = -11.8910 (11.89 dB, 0.61m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.41)...
+Processed 400 batches (loss = -16.41)...
+Processed 600 batches (loss = -16.33)...
+Processed 800 batches (loss = -16.29)...
+Loss(time/N, lr=5.714e-05) - Epoch 112: train = -16.3456 (16.35 dB, 27.91m/900) | dev = -11.8782 (11.88 dB, 0.61m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.34)...
+Processed 400 batches (loss = -16.36)...
+Processed 600 batches (loss = -16.37)...
+Processed 800 batches (loss = -16.33)...
+Loss(time/N, lr=5.143e-05) - Epoch 113: train = -16.3531 (16.35 dB, 27.85m/900) | dev = -11.8985 (11.90 dB, 0.61m/69) | no impr, best = -11.9279
+Processed 200 batches (loss = -16.33)...
+Processed 400 batches (loss = -16.36)...
+Processed 600 batches (loss = -16.43)...
+Processed 800 batches (loss = -16.33)...
+Loss(time/N, lr=4.628e-05) - Epoch 114: train = -16.3677 (16.37 dB, 27.90m/900) | dev = -11.9304 (11.93 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -16.39)...
+Processed 400 batches (loss = -16.36)...
+Processed 600 batches (loss = -16.44)...
+Processed 800 batches (loss = -16.36)...
+Loss(time/N, lr=4.166e-05) - Epoch 115: train = -16.3743 (16.37 dB, 27.90m/900) | dev = -11.9235 (11.92 dB, 0.62m/69) | no impr, best = -11.9304
+Processed 200 batches (loss = -16.37)...
+Processed 400 batches (loss = -16.40)...
+Processed 600 batches (loss = -16.49)...
+Processed 800 batches (loss = -16.35)...
+Loss(time/N, lr=3.749e-05) - Epoch 116: train = -16.3868 (16.39 dB, 27.84m/900) | dev = -11.8881 (11.89 dB, 0.61m/69) | no impr, best = -11.9304
+Processed 200 batches (loss = -16.43)...
+Processed 400 batches (loss = -16.37)...
+Processed 600 batches (loss = -16.36)...
+Processed 800 batches (loss = -16.41)...
+Loss(time/N, lr=3.374e-05) - Epoch 117: train = -16.3953 (16.40 dB, 27.91m/900) | dev = -11.9007 (11.90 dB, 0.62m/69) | no impr, best = -11.9304
+Processed 200 batches (loss = -16.39)...
+Processed 400 batches (loss = -16.45)...
+Processed 600 batches (loss = -16.37)...
+Processed 800 batches (loss = -16.42)...
+Loss(time/N, lr=3.037e-05) - Epoch 118: train = -16.4058 (16.41 dB, 27.88m/900) | dev = -11.9171 (11.92 dB, 0.61m/69) | no impr, best = -11.9304
+Processed 200 batches (loss = -16.34)...
+Processed 400 batches (loss = -16.42)...
+Processed 600 batches (loss = -16.43)...
+Processed 800 batches (loss = -16.50)...
+Loss(time/N, lr=2.733e-05) - Epoch 119: train = -16.4156 (16.42 dB, 27.92m/900) | dev = -11.8519 (11.85 dB, 0.62m/69) | no impr, best = -11.9304
+Processed 200 batches (loss = -16.41)...
+Processed 400 batches (loss = -16.42)...
+Processed 600 batches (loss = -16.42)...
+Processed 800 batches (loss = -16.44)...
+Loss(time/N, lr=2.460e-05) - Epoch 120: train = -16.4104 (16.41 dB, 27.78m/900) | dev = -11.9307 (11.93 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -16.43)...
+Processed 400 batches (loss = -16.46)...
+Processed 600 batches (loss = -16.36)...
+Processed 800 batches (loss = -16.43)...
+Loss(time/N, lr=2.214e-05) - Epoch 121: train = -16.4233 (16.42 dB, 27.73m/900) | dev = -11.9973 (12.00 dB, 0.61m/69) | saved model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr_full_utterance_drc_stft_align_f50.keras
+Processed 200 batches (loss = -16.39)...
+Processed 400 batches (loss = -16.47)...
+Processed 600 batches (loss = -16.42)...
+Processed 800 batches (loss = -16.42)...
+Loss(time/N, lr=1.992e-05) - Epoch 122: train = -16.4288 (16.43 dB, 27.95m/900) | dev = -11.9332 (11.93 dB, 0.62m/69) | no impr, best = -11.9973
+Processed 200 batches (loss = -16.52)...
+Processed 400 batches (loss = -16.39)...
+Processed 600 batches (loss = -16.44)...
+Processed 800 batches (loss = -16.41)...
+Loss(time/N, lr=1.793e-05) - Epoch 123: train = -16.4363 (16.44 dB, 28.30m/900) | dev = -11.9274 (11.93 dB, 0.62m/69) | no impr, best = -11.9973
