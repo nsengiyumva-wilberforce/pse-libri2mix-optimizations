@@ -50,12 +50,13 @@ The dilution series uses one guided STFT (frame similarity mixed with the enroll
 `decoder` against `early` holds the operator fixed at concatenation, so a gain there is depth. `bottleneck` against `early` also swaps in ASFF. On dev SI-SDR, the claim holds when `none < early < late` and `late` is at least as high as `all`. The six graphs are about 6.61M to 6.64M parameters.
 
 ```bash
+./scripts/speaker_dilution.sh gpus
 ./scripts/speaker_dilution.sh early
 EPOCHS=20 ./scripts/speaker_dilution.sh late
 ./scripts/speaker_dilution.sh series
 ```
 
-`LOSS` defaults to `si-sdr`. `EPOCHS` defaults to 200. `series` runs `none`, `early`, `bottleneck`, `decoder`, `late`, then `all`.
+`LOSS` defaults to `si-sdr`. `EPOCHS` defaults to 200. `gpus` only prints which cards are free. `series` runs `none`, `early`, `bottleneck`, `decoder`, `late`, then `all`, one condition per free GPU. When every free card is busy with this series, the next condition waits for one to finish. A card counts as free when it has no compute process and is using under `GPU_FREE_MIB` MiB (default 2048), so a desktop session still counts. Logs go to `logs/inject_<name>.log`. Set `CUDA_VISIBLE_DEVICES` to limit the cards the script may use.
 
 ## Checkpoints
 
