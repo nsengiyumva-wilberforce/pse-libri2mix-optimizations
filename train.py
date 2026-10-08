@@ -147,13 +147,73 @@ def _parse_args():
         action="store_true",
         help=(
             "Condition the U-Net with SEF-PNet frame similarity on the compressed "
-            "STFT instead of the speaker-embedding injection."
+            "STFT at the input, bottleneck, and decoder. Same graph as --inject all, "
+            "with the historical checkpoint name."
         ),
+    )
+    parser.add_argument(
+        "--inject",
+        choices=("none", "early", "bottleneck", "decoder", "late", "all"),
+        default=None,
+        help=(
+            "Where the enrollment STFT cue is injected. "
+            "none ignores it, early concatenates it onto the mixture, "
+            "bottleneck and decoder inject it later, late is bottleneck+decoder, "
+            "all is early+bottleneck+decoder. "
+            "Omit this and omit --stft-interact to keep FiLM and enrollment attention."
+        ),
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="Training epochs. Defaults to the SEF-PNet schedule of 200.",
     )
     return parser.parse_args()
 
 
 args = _parse_args()
+if args.epochs is not None and args.epochs < 1:
+    raise SystemExit("--epochs must be at least 1.")
+
+# embed: FiLM and enrollment attention. Anything else uses the guided STFT.
+# --stft-interact keeps the previous all-sites graph and checkpoint name.
+if args.inject is not None:
+    INJECT = args.inject
+elif args.stft_interact:
+    INJECT = "all"
+else:
+    INJECT = "embed"
+_INJECT_SITES = {
+    "none": frozenset(),
+    "early": frozenset({"early"}),
+    "bottleneck": frozenset({"bottleneck"}),
+    "decoder": frozenset({"decoder"}),
+    "late": frozenset({"bottleneck", "decoder"}),
+    "all": frozenset({"early", "bottleneck", "decoder"}),
+}
+
+
+def _checkpoint_filename(loss_tag):
+    filename = (
+        "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_"
+        + loss_tag
+        + ".keras"
+    )
+    if args.full_utterance:
+        filename = filename.replace(".keras", "_full_utterance.keras")
+    filename = filename.replace(".keras", "_drc.keras")
+    # Bare --stft-interact stays on the old name so earlier checkpoints still load.
+    if args.stft_interact and args.inject is None:
+        filename = filename.replace(".keras", "_stft.keras")
+    filename = filename.replace(".keras", "_align.keras")
+    filename = filename.replace(".keras", "_f50.keras")
+    filename = filename.replace(".keras", "_bnifi.keras")
+    filename = filename.replace(".keras", "_dcat.keras")
+    filename = filename.replace(".keras", "_asff_eca.keras")
+    if args.inject is not None:
+        filename = filename.replace(".keras", f"_inject_{args.inject}.keras")
+    return filename
 
 
 #--------------------------------
@@ -360,10 +420,16 @@ if args.full_utterance:
     print("Reference mode: full auxiliary utterance")
 else:
     print("Reference mode: sampled auxiliary segments")
-if args.stft_interact:
-    print("Injection: SEF-PNet STFT frame similarity")
-else:
-    print("Injection: speaker embedding, FiLM, and enrollment attention")
+_INJECT_DESCRIPTION = {
+    "embed": "speaker embedding, FiLM, and enrollment attention",
+    "none": "guided STFT dropped, enrollment ignored",
+    "early": "guided STFT concatenated at the input",
+    "bottleneck": "guided STFT at the bottleneck only",
+    "decoder": "guided STFT at each decoder stage only",
+    "late": "guided STFT at the bottleneck and decoder",
+    "all": "guided STFT at the input, bottleneck, and decoder",
+}
+print(f"Injection: {_INJECT_DESCRIPTION[INJECT]}")
 print(
     f"Frontend: {frame_length}-point sqrt-Hann, hop {frame_step}, "
     f"chunk {CHUNK_SIZE}, stride {STRIDE}, no peak norm"
@@ -1304,6 +1370,19 @@ def enrollment_cross_attention(x, ref_seq, ref_seq_mask, name="enroll_xattn"):
     return Conv2D(channels, 1, padding="same", name=f"{name}_proj")(attended)
 
 
+@tf.keras.utils.register_keras_serializable()
+class DropEnrollment(Layer):
+    """Keep the enrollment input in the graph and add nothing to the features."""
+
+    def call(self, inputs):
+        features, *rest = inputs
+        sink = tf.add_n([tf.cast(tf.reduce_sum(tensor), features.dtype) for tensor in rest])
+        return features + sink * 0.0
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
+
+
 def custom_unet(
     input_shape,
     num_classes=1,
@@ -1322,6 +1401,7 @@ def custom_unet(
     ref_chunk_frames=128,
     max_ref_frames=1280,
     stft_interact=False,
+    inject="embed",
     segment_frames=256,
 ):
     if upsample_mode == "deconv":
@@ -1342,8 +1422,12 @@ def custom_unet(
     x = PowerLawComplexSpec(factor=MAG_COMPRESS, name="compress_main")(main_input)
     ref_x = PowerLawComplexSpec(factor=MAG_COMPRESS, name="compress_ref")(ref_input)
     main_input_copy = x
+    # --stft-interact is the all-sites guided path. inject selects the sites.
+    if inject != "embed":
+        stft_interact = True
+    guided_sites = _INJECT_SITES.get(inject, _INJECT_SITES["all"])
 
-    if stft_interact:
+    if stft_interact and guided_sites:
         if full_utterance:
             enroll, enroll_mask = ref_x, ref_mask_input
         else:
@@ -1355,7 +1439,11 @@ def custom_unet(
         guided = Reshape((time_bins, freq_bins, 2), name="stft_guided")(sim_and_mean[..., 0:2])
         enroll_mean = Reshape((time_bins, freq_bins, 2), name="stft_mean")(sim_and_mean[..., 2:4])
         guided = ASFFFusion(name="stft_asff")([guided, enroll_mean])
-        x = Concatenate(axis=-1, name="stft_fuse")([x, guided])
+        if "early" in guided_sites:
+            x = Concatenate(axis=-1, name="stft_fuse")([x, guided])
+    elif stft_interact:
+        dropped = [x, ref_x] if ref_mask_input is None else [x, ref_x, ref_mask_input]
+        x = DropEnrollment(name="drop_enroll")(dropped)
 
     # Four stride-2 pools need both axes divisible by 16. The 8 ms hop does not
     # land on that grid (497 x 129), so pad here and crop before the mask.
@@ -1370,15 +1458,16 @@ def custom_unet(
     # the bottleneck grid for ASFF after the xLSTM.
     guided_map = None
     guided_bn = None
-    if stft_interact:
+    if stft_interact and guided_sites & {"bottleneck", "decoder"}:
         guided_map = guided
         if pad_time or pad_freq:
             guided_map = ZeroPadding2D(
                 padding=((0, pad_time), (0, pad_freq)), name="guided_pad"
             )(guided_map)
-        guided_bn = guided_map
-        for level in range(num_layers):
-            guided_bn = AveragePooling2D((2, 2), name=f"guided_pool_{level}")(guided_bn)
+        if "bottleneck" in guided_sites:
+            guided_bn = guided_map
+            for level in range(num_layers):
+                guided_bn = AveragePooling2D((2, 2), name=f"guided_pool_{level}")(guided_bn)
 
     down_layers = []
     for l in range(num_layers):
@@ -1389,7 +1478,7 @@ def custom_unet(
         dropout += dropout_change_per_layer
         filters = int(filters * 1.5)
 
-    if not stft_interact:
+    if inject == "embed":
         filters_ref = filters // (2**num_layers)
         if full_utterance:
             speaker_embed, ref_seq, ref_seq_mask = encode_reference_full(
@@ -1416,13 +1505,13 @@ def custom_unet(
     x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
     x_reshaped = Reshape((T_small, F_small, C_small))(x_expanded)
     x = Conv2D(C_small, (1, 1), padding="same", activation=activation, name="bn_reconstruct")(x_reshaped)
-    if stft_interact:
+    if stft_interact and "bottleneck" in guided_sites:
         guided_proj = Conv2D(int(x.shape[-1]), 1, padding="same", name="bn_guided_proj")(guided_bn)
         x = ASFFFusion(name="bn_guided_asff")([x, guided_proj])
     # if not use_dropout_on_upsampling:
     #     dropout = 0.0
     #     dropout_change_per_layer = 0.0
-    if stft_interact:
+    if stft_interact and "decoder" in guided_sites:
         for conv in reversed(down_layers):
             filters = conv.shape[-1]
             x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
@@ -1440,7 +1529,7 @@ def custom_unet(
             x = tf_alternating_block(
                 x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}"
             )
-    else:
+    elif inject == "embed":
         spk_field = attn_map
         for conv in reversed(down_layers):
             filters = conv.shape[-1]
@@ -1458,6 +1547,17 @@ def custom_unet(
             )(spk_field)
             x = ASFFFusion(name=f"up_asff_{filters}")([x, spk_res_up])
             x = tf_alternating_block(x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}")
+    else:
+        for conv in reversed(down_layers):
+            filters = conv.shape[-1]
+            x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
+            if use_attention:
+                x = attention_concat(conv_below=x, skip_connection=conv)
+            else:
+                x = concatenate([x, conv])
+            x = tf_alternating_block(
+                x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}"
+            )
     if pad_time or pad_freq:
         x = Cropping2D(cropping=((0, pad_time), (0, pad_freq)), name="unet_crop")(x)
     input_r = main_input_copy[..., 0:1]
@@ -1484,23 +1584,7 @@ def custom_unet(
     return Model(inputs=model_inputs, outputs=[outputs])
 
 
-model_filename = "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
-if args.l is not None:
-    model_filename = (
-        "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_"
-        + args.l.replace("-", "_")
-        + ".keras"
-    )
-if args.full_utterance:
-    model_filename = model_filename.replace(".keras", "_full_utterance.keras")
-model_filename = model_filename.replace(".keras", "_drc.keras")
-if args.stft_interact:
-    model_filename = model_filename.replace(".keras", "_stft.keras")
-model_filename = model_filename.replace(".keras", "_align.keras")
-model_filename = model_filename.replace(".keras", "_f50.keras")
-model_filename = model_filename.replace(".keras", "_bnifi.keras")
-model_filename = model_filename.replace(".keras", "_dcat.keras")
-model_filename = model_filename.replace(".keras", "_asff_eca.keras")
+model_filename = _checkpoint_filename(args.l.replace("-", "_") if args.l is not None else "si_sdr")
 model = custom_unet(
     input_shape=(N_FRAMES, N_BINS, 2),
     use_batch_norm=True,
@@ -1516,6 +1600,7 @@ model = custom_unet(
     ref_chunk_frames=REF_CHUNK_FRAMES,
     max_ref_frames=MAX_REF_FRAMES,
     stft_interact=args.stft_interact,
+    inject=INJECT,
     segment_frames=REF_SEGMENT_FRAMES,
 )
 callbacks = [
@@ -2161,17 +2246,7 @@ def main():
 
 # ==========================================================
 if args.l is None:
-    eval_weights = "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_si_sdr.keras"
-    if args.full_utterance:
-        eval_weights = eval_weights.replace(".keras", "_full_utterance.keras")
-    eval_weights = eval_weights.replace(".keras", "_drc.keras")
-    if args.stft_interact:
-        eval_weights = eval_weights.replace(".keras", "_stft.keras")
-    eval_weights = eval_weights.replace(".keras", "_align.keras")
-    eval_weights = eval_weights.replace(".keras", "_f50.keras")
-    eval_weights = eval_weights.replace(".keras", "_bnifi.keras")
-    eval_weights = eval_weights.replace(".keras", "_dcat.keras")
-    eval_weights = eval_weights.replace(".keras", "_asff_eca.keras")
+    eval_weights = _checkpoint_filename("si_sdr")
     model.load_weights(eval_weights)
     model.trainable = False
     print("Model loaded for inference")
@@ -2193,7 +2268,8 @@ else:
         )
     print(f"Training with SEF-PNet SiSnrTrainer ({LOSS_LABELS[args.l]})")
     print(f"Checkpoint: {model_filename}")
-    print(f"Adam lr={trainer_conf['optimizer_kwargs']['lr']}, batch {batch_size}, epochs {EPOCHS}")
+    run_epochs = EPOCHS if args.epochs is None else args.epochs
+    print(f"Adam lr={trainer_conf['optimizer_kwargs']['lr']}, batch {batch_size}, epochs {run_epochs}")
     trainer = SiSnrTrainer(
         model,
         _AUDIO_TOOLKIT,
@@ -2208,5 +2284,5 @@ else:
         make_dataloader(
             train=False, data_kwargs=dev_data, chunk_size=chunk_size, batch_size=batch_size
         ),
-        num_epochs=EPOCHS,
+        num_epochs=run_epochs,
     )
