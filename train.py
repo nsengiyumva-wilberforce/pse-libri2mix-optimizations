@@ -424,7 +424,7 @@ _INJECT_DESCRIPTION = {
     "embed": "speaker embedding, FiLM, and enrollment attention",
     "none": "guided STFT dropped, enrollment ignored",
     "early": "guided STFT concatenated at the input",
-    "bottleneck": "guided STFT at the bottleneck only",
+    "bottleneck": "guided STFT fused into the bottleneck map before the xLSTM",
     "decoder": "guided STFT at each decoder stage only",
     "late": "guided STFT at the bottleneck and decoder",
     "all": "guided STFT at the input, bottleneck, and decoder",
@@ -1033,13 +1033,16 @@ class ASFFFusion(Layer):
 
     Both maps already share height, width, and channels. Each is projected with a
     1x1 convolution, a second 1x1 scores the pair, and a per-bin softmax mixes
-    them. The score convolution is zero-initialized, so training starts from an
-    equal mix.
+    them. The score kernel starts at zero. With prefer_left False the bias is
+    zero too, so the mix starts equal. With prefer_left True the bias starts at
+    [2, -2], about 98% on the main map, so a newly injected cue does not replace
+    the features the mask is reading.
     """
 
-    def __init__(self, compress=8, **kwargs):
+    def __init__(self, compress=8, prefer_left=False, **kwargs):
         super().__init__(**kwargs)
         self.compress = int(compress)
+        self.prefer_left = bool(prefer_left)
         # Created here so Keras tracks them. build() is too late for the functional model.
         self.compress_left = Conv2D(
             self.compress, 1, padding="same", use_bias=False, kernel_initializer="he_normal"
@@ -1047,8 +1050,11 @@ class ASFFFusion(Layer):
         self.compress_right = Conv2D(
             self.compress, 1, padding="same", use_bias=False, kernel_initializer="he_normal"
         )
+        bias = (
+            keras.initializers.Constant([2.0, -2.0]) if self.prefer_left else "zeros"
+        )
         self.level = Conv2D(
-            2, 1, padding="same", kernel_initializer="zeros", bias_initializer="zeros"
+            2, 1, padding="same", kernel_initializer="zeros", bias_initializer=bias
         )
 
     def build(self, input_shape):
@@ -1073,7 +1079,7 @@ class ASFFFusion(Layer):
 
     def get_config(self):
         config = super().get_config()
-        config.update({"compress": self.compress})
+        config.update({"compress": self.compress, "prefer_left": self.prefer_left})
         return config
 
 def attentive_pooling(x, name="att_pool"):
@@ -1455,7 +1461,7 @@ def custom_unet(
         x = ZeroPadding2D(padding=((0, pad_time), (0, pad_freq)), name="unet_pad")(x)
 
     # Full-resolution guided map for the decoder, and the same map pooled onto
-    # the bottleneck grid for ASFF after the xLSTM.
+    # the bottleneck grid so ASFF can fuse it before the xLSTM.
     guided_map = None
     guided_bn = None
     if stft_interact and guided_sites & {"bottleneck", "decoder"}:
@@ -1499,15 +1505,17 @@ def custom_unet(
         attn_map = enrollment_cross_attention(x, ref_seq, ref_seq_mask, name="bn_enroll_xattn")
         x = ASFFFusion(name="bn_asff")([x_film, attn_map])
         x = eca_block(x, name="bn_eca")
+    # Fuse the cue into the encoder map so the xLSTM reads it. Doing this after
+    # the xLSTM leaves the sequence model on the mixture alone.
+    if stft_interact and "bottleneck" in guided_sites:
+        guided_proj = Conv2D(int(x.shape[-1]), 1, padding="same", name="bn_guided_proj")(guided_bn)
+        x = ASFFFusion(name="bn_guided_asff")([x, guided_proj])
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]
     x_seq = Reshape((T_small, F_small * C_small))(x)
     x_seq = add_xlstm_block(x_seq, hidden_dim=128, num_layers=1, prefix="main_bottleneck")
     x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
     x_reshaped = Reshape((T_small, F_small, C_small))(x_expanded)
     x = Conv2D(C_small, (1, 1), padding="same", activation=activation, name="bn_reconstruct")(x_reshaped)
-    if stft_interact and "bottleneck" in guided_sites:
-        guided_proj = Conv2D(int(x.shape[-1]), 1, padding="same", name="bn_guided_proj")(guided_bn)
-        x = ASFFFusion(name="bn_guided_asff")([x, guided_proj])
     # if not use_dropout_on_upsampling:
     #     dropout = 0.0
     #     dropout_change_per_layer = 0.0
@@ -1562,8 +1570,10 @@ def custom_unet(
         x = Cropping2D(cropping=((0, pad_time), (0, pad_freq)), name="unet_crop")(x)
     input_r = main_input_copy[..., 0:1]
     input_i = main_input_copy[..., 1:2]
-    mask_r = Conv2D(1, (1, 1), activation=None, kernel_initializer="zeros", name="mask_real")(x)
-    mask_i = Conv2D(1, (1, 1), activation=None, kernel_initializer="zeros", name="mask_imag")(x)
+    # A zero or near-zero kernel makes the waveform the mixture and scales every
+    # gradient behind the mask by that kernel. he_normal keeps the path open.
+    mask_r = Conv2D(1, (1, 1), activation=None, kernel_initializer="he_normal", name="mask_real")(x)
+    mask_i = Conv2D(1, (1, 1), activation=None, kernel_initializer="he_normal", name="mask_imag")(x)
     mask_r = LearnableScale(initial_value=2.0, name="scale_r")(mask_r)
     mask_i = LearnableScale(initial_value=2.0, name="scale_i")(mask_i)
     out_r = layers.Subtract()([

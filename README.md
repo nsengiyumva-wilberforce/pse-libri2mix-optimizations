@@ -40,7 +40,7 @@ The dilution series uses one guided STFT (frame similarity mixed with the enroll
 |---|---|
 | `none` | Ignored. The enrollment input stays in the graph and adds nothing. |
 | `early` | Concatenated onto the mixture. This is the diluted case. |
-| `bottleneck` | ASFF after the xLSTM. |
+| `bottleneck` | ASFF into the bottleneck map, then the xLSTM. |
 | `decoder` | Concatenated at each decoder stage. |
 | `late` | Bottleneck and decoder. This is the proposed injection. |
 | `all` | Input, bottleneck, and decoder. |
@@ -55,7 +55,7 @@ EPOCHS=20 ./scripts/speaker_dilution.sh late
 ./scripts/speaker_dilution.sh series
 ```
 
-`LOSS` defaults to `si-sdr`. `EPOCHS` defaults to 200. `series` runs `none`, `early`, `bottleneck`, `decoder`, `late`, then `all`.
+`LOSS` defaults to `si-sdr`. `EPOCHS` defaults to 200. `gpus` only prints which cards are free. A single condition stays in this terminal. `series` runs `none`, `early`, `bottleneck`, `decoder`, `late`, then `all`, one condition per free GPU, and queues the rest. A card counts as free when it has no compute process and is using under `GPU_FREE_MIB` MiB (default 4096). Epoch lines for a series are in `logs/inject_<name>.log`. The script also prefers the host `libcuda` over the CUDA compat library, which these 4090s reject when it is newer than driver 535.
 
 ## Checkpoints
 
