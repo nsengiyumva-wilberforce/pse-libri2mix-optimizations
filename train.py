@@ -11,6 +11,10 @@ import time
 import logging
 import numpy as np
 import tensorflow as tf
+
+for _gpu in tf.config.list_physical_devices("GPU"):
+    tf.config.experimental.set_memory_growth(_gpu, True)
+
 from tqdm import tqdm
 from pesq import pesq
 from pystoi import stoi
@@ -52,7 +56,6 @@ import math
 import time
 import random
 import soundfile as sf
-from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from tqdm import tqdm
 import soundfile as sf
 from tensorflow.keras.layers import (
@@ -135,39 +138,16 @@ def _parse_args():
         ),
     )
     parser.add_argument(
-        "--full-utterance",
-        action="store_true",
-        help=(
-            "Feed each auxiliary utterance whole instead of sampling reference segments. "
-            "The reference encoder then splits long spectrograms into contiguous chunks."
-        ),
-    )
-    parser.add_argument(
-        "--stft-interact",
-        action="store_true",
-        help=(
-            "Condition the U-Net with SEF-PNet frame similarity on the compressed "
-            "STFT at the input, bottleneck, and decoder. Same graph as --inject all, "
-            "with the historical checkpoint name."
-        ),
-    )
-    parser.add_argument(
-        "--inject",
-        choices=("none", "early", "bottleneck", "decoder", "late", "all"),
-        default=None,
-        help=(
-            "Where the enrollment STFT cue is injected. "
-            "none ignores it, early concatenates it onto the mixture, "
-            "bottleneck and decoder inject it later, late is bottleneck+decoder, "
-            "all is early+bottleneck+decoder. "
-            "Omit this and omit --stft-interact to keep FiLM and enrollment attention."
-        ),
-    )
-    parser.add_argument(
         "--epochs",
         type=int,
         default=None,
         help="Training epochs. Defaults to the SEF-PNet schedule of 200.",
+    )
+    parser.add_argument(
+        "--batch",
+        type=int,
+        default=16,
+        help="Clips per GPU. One GPU trains at this size. Three GPUs train at three times this size.",
     )
     return parser.parse_args()
 
@@ -175,45 +155,19 @@ def _parse_args():
 args = _parse_args()
 if args.epochs is not None and args.epochs < 1:
     raise SystemExit("--epochs must be at least 1.")
+if args.batch < 1:
+    raise SystemExit("--batch must be at least 1.")
 
-# embed: FiLM and enrollment attention. Anything else uses the guided STFT.
-# --stft-interact keeps the previous all-sites graph and checkpoint name.
-if args.inject is not None:
-    INJECT = args.inject
-elif args.stft_interact:
-    INJECT = "all"
-else:
-    INJECT = "embed"
-_INJECT_SITES = {
-    "none": frozenset(),
-    "early": frozenset({"early"}),
-    "bottleneck": frozenset({"bottleneck"}),
-    "decoder": frozenset({"decoder"}),
-    "late": frozenset({"bottleneck", "decoder"}),
-    "all": frozenset({"early", "bottleneck", "decoder"}),
-}
+# Clips on each GPU. Three cards train at three times this. One card trains at this size.
+PER_GPU_BATCH = args.batch
 
 
 def _checkpoint_filename(loss_tag):
-    filename = (
+    return (
         "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_"
         + loss_tag
-        + ".keras"
+        + "_full_utterance_drc_align_f50_bnifi_dcat_asff_eca_inject_early.keras"
     )
-    if args.full_utterance:
-        filename = filename.replace(".keras", "_full_utterance.keras")
-    filename = filename.replace(".keras", "_drc.keras")
-    # Bare --stft-interact stays on the old name so earlier checkpoints still load.
-    if args.stft_interact and args.inject is None:
-        filename = filename.replace(".keras", "_stft.keras")
-    filename = filename.replace(".keras", "_align.keras")
-    filename = filename.replace(".keras", "_f50.keras")
-    filename = filename.replace(".keras", "_bnifi.keras")
-    filename = filename.replace(".keras", "_dcat.keras")
-    filename = filename.replace(".keras", "_asff_eca.keras")
-    if args.inject is not None:
-        filename = filename.replace(".keras", f"_inject_{args.inject}.keras")
-    return filename
 
 
 #--------------------------------
@@ -258,12 +212,9 @@ _MAX_AUX_FRAMES = conv_stft_frames(18 * TARGET_SR, frame_length, frame_step)
 MAX_REF_FRAMES = int(math.ceil(_MAX_AUX_FRAMES / REF_CHUNK_FRAMES) * REF_CHUNK_FRAMES)
 N_BINS = n_fft // 2 + 1
 N_FRAMES = conv_stft_frames(CHUNK_SIZE, frame_length, frame_step)
-REF_SEGMENT_SAMPLES = 16600
-REF_SEGMENT_FRAMES = conv_stft_frames(REF_SEGMENT_SAMPLES, frame_length, frame_step)
 # SEF-PNet power-law compression on complex spectra (Li et al., beta = 0.5).
 MAG_COMPRESS = 0.5
 
-batch_size = 32
 # SEF-PNet train.sh runs 200 epochs. The step decay is defined across that span.
 EPOCHS = 200
 
@@ -416,20 +367,8 @@ def configure_libri_speech_dataset(
     )
 
 
-if args.full_utterance:
-    print("Reference mode: full auxiliary utterance")
-else:
-    print("Reference mode: sampled auxiliary segments")
-_INJECT_DESCRIPTION = {
-    "embed": "speaker embedding, FiLM, and enrollment attention",
-    "none": "guided STFT dropped, enrollment ignored",
-    "early": "guided STFT concatenated at the input",
-    "bottleneck": "guided STFT fused into the bottleneck map before the xLSTM",
-    "decoder": "guided STFT at each decoder stage only",
-    "late": "guided STFT at the bottleneck and decoder",
-    "all": "guided STFT at the input, bottleneck, and decoder",
-}
-print(f"Injection: {_INJECT_DESCRIPTION[INJECT]}")
+print("Reference mode: full auxiliary utterance")
+print("Injection: early fusion, guided STFT concatenated at the input")
 print(
     f"Frontend: {frame_length}-point sqrt-Hann, hop {frame_step}, "
     f"chunk {CHUNK_SIZE}, stride {STRIDE}, no peak norm"
@@ -754,50 +693,8 @@ def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="x
     return x
 
 
-def attention_gate(inp_1, inp_2, n_intermediate_filters):
-    """Attention gate. Compresses both inputs to n_intermediate_filters filters before processing.
-    Implemented as proposed by Oktay et al. in their Attention U-net, see: https://arxiv.org/abs/1804.03999.
-    """
-    inp_1_conv = Conv2D(
-        n_intermediate_filters,
-        kernel_size=1,
-        strides=1,
-        padding="same",
-        kernel_initializer="he_normal",
-    )(inp_1)
-    inp_2_conv = Conv2D(
-        n_intermediate_filters,
-        kernel_size=1,
-        strides=1,
-        padding="same",
-        kernel_initializer="he_normal",
-    )(inp_2)
-
-    f = Activation("relu")(add([inp_1_conv, inp_2_conv]))
-    g = Conv2D(
-        filters=1,
-        kernel_size=1,
-        strides=1,
-        padding="same",
-        kernel_initializer="he_normal",
-    )(f)
-    h = Activation("sigmoid")(g)
-    return multiply([inp_1, h])
-
-
 def upsample_conv(filters, kernel_size, strides, padding):
     return Conv2DTranspose(filters, kernel_size, strides=strides, padding=padding)
-
-
-def upsample_simple(filters, kernel_size, strides, padding):
-    return UpSampling2D(strides)
-
-
-def attention_concat(conv_below, skip_connection):
-    """Performs concatenation of upsampled conv_below with attention gated version of skip-connection"""
-    below_filters = conv_below.shape[-1]
-    attention_across = attention_gate(skip_connection, conv_below, below_filters)
-    return concatenate([conv_below, attention_across])
 
 
 @tf.keras.utils.register_keras_serializable()
@@ -825,114 +722,6 @@ class PowerLawComplexSpec(Layer):
         return config
 
 
-def film(x, speaker_embedding):
-    """
-    Personalized Feature-wise Linear Modulation.
-    Zero-initialized so training starts at the identity map.
-    """
-    C = x.shape[-1]
-
-    gamma = Dense(C, kernel_initializer="zeros")(speaker_embedding)
-    beta = Dense(C, kernel_initializer="zeros")(speaker_embedding)
-    gamma = Activation("tanh")(gamma)
-    beta = Activation("tanh")(beta)
-
-    gamma = Reshape((1, 1, C))(gamma)
-    beta = Reshape((1, 1, C))(beta)
-
-    return Multiply()([x, 1.0 + gamma]) + beta
-
-
-def upsample_bilinear_personalized(x, speaker_embedding, filters, kernel_size=(3, 3)):
-    """
-    The Bilinear + FiLM replacement for Conv2DTranspose.
-    """
-    # 1. Spatial Expansion (Bilinear is the 2026 'artifact-free' choice)
-    x = UpSampling2D(size=(2, 2), interpolation="bilinear")(x)
-
-    # 2. Refinement Convolution
-    x = Conv2D(filters, kernel_size, padding="same", kernel_initializer="he_normal")(x)
-    x = BatchNormalization()(x)
-    x = Activation("relu")(x)
-
-    # 3. Inject Speaker conditioning
-    x = film(x, speaker_embedding)
-
-    return x
-
-
-def conv2d_block(
-    inputs,
-    use_batch_norm=True,
-    dropout=0.3,
-    dropout_type="spatial",
-    filters=16,
-    kernel_size=(3, 3),
-    activation="relu",
-    kernel_initializer="he_normal",
-    padding="same",
-):
-
-    if dropout_type == "spatial":
-        DO = SpatialDropout2D
-    elif dropout_type == "standard":
-        DO = Dropout
-    else:
-        raise ValueError(
-            f"dropout_type must be one of ['spatial', 'standard'], got {dropout_type}"
-        )
-
-    c = Conv2D(
-        filters,
-        kernel_size,
-        activation=activation,
-        kernel_initializer=kernel_initializer,
-        padding=padding,
-        use_bias=not use_batch_norm,
-    )(inputs)
-    if use_batch_norm:
-        c = BatchNormalization()(c)
-    if dropout > 0.0:
-        c = DO(dropout)(c)
-    c = Conv2D(
-        filters,
-        kernel_size,
-        activation=activation,
-        kernel_initializer=kernel_initializer,
-        padding=padding,
-        use_bias=not use_batch_norm,
-    )(c)
-    if use_batch_norm:
-        c = BatchNormalization()(c)
-    return c
-
-
-def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
-    """
-    Cross-attention conditioning.
-
-    x: (B, T, F, C)
-    speaker_embedding: (B, D)
-    returns: (B, T, F, C)
-    """
-    B, T, F, C = x.shape
-    # Flatten spatial dims: (B, T*F, C)
-    x_flat = Reshape((T * F, C))(x)
-    # Speaker as query: (B, 1, D)
-    q = Reshape((1, speaker_embedding.shape[-1]))(speaker_embedding)
-    # Project to match channels
-    q = Dense(C)(q)
-    # Cross-attention
-    attn = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(
-        query=q, value=x_flat, key=x_flat
-    )
-    # Broadcast back to all positions
-    attn = RepeatVector(T * F)(attn[:, 0, :])
-    # Reshape back to feature map
-    attn_map = Reshape((T, F, C))(attn)
-    # Residual modulation
-    return x + attn_map
-    
 def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
     orginal_x = x
     # ---- Frequency branch (1 x 3) for the first branch, we get time convolutions over frequency
@@ -940,16 +729,16 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
                       kernel_initializer="he_normal",
                       name=f"{name_prefix}_fconv")(x)
     if use_bn:
-        x = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
-    x = Activation(activation)(x)
+        f_branch  = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
+    f_branch = Activation(activation)(f_branch )
 
     # ---- Time branch (3 x 1) ----
     t_branch = Conv2D(filters, (5,5), padding="same",
                       kernel_initializer="he_normal",
                       name=f"{name_prefix}_tconv")(x)
     if use_bn:
-        x = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
-    x = Activation(activation)(x)
+        t_branch  = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
+    t_branch = Activation(activation)(t_branch )
 
     # ---- Merge ----
     x = Concatenate(name=f"{name_prefix}_concat")([f_branch, t_branch])
@@ -959,15 +748,15 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
                         kernel_initializer="he_normal",
                         name=f"{name_prefix}_tconv2")(orginal_x)
     if use_bn:
-        orginal_x = BatchNormalization(name=f"{name_prefix}_tbn2")(t_branch_2)
-    orginal_x = Activation(activation)(t_branch_2)
+        t_branch_2  = BatchNormalization(name=f"{name_prefix}_tbn2")(t_branch_2)
+    t_branch_2  = Activation(activation)(t_branch_2)
 
     f_branch_2 = Conv2D(filters, (3, 3), padding="same",
                         kernel_initializer="he_normal",
                         name=f"{name_prefix}_fconv2")(orginal_x)
     if use_bn:
-        orginal_x = BatchNormalization(name=f"{name_prefix}_fbn2")(f_branch_2)
-    orginal_x = Activation(activation)(f_branch_2)
+        f_branch_2  = BatchNormalization(name=f"{name_prefix}_fbn2")(f_branch_2)
+    f_branch_2 = Activation(activation)(f_branch_2)
 
     # Merge again
     x = Concatenate(name=f"{name_prefix}_concat2")([t_branch_2, f_branch_2])
@@ -997,13 +786,6 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
     x = Activation(activation)(x)
 
     return x
-def broadcast_speaker(embed, target_tensor):
-        target_shape = target_tensor.shape # (Batch, T, F, C)
-        s = layers.Dense(target_shape[-1])(embed)
-        s = layers.Reshape((1, 1, target_shape[-1]))(s)
-        # Tile/Broadcast to (T, F, C)
-        return layers.UpSampling2D(size=(target_shape[1], target_shape[2]))(s)
-
 def eca_kernel_size(channels, gamma=2, b=1):
     """Odd 1D kernel from ECA-Net: k = |log2(C)/gamma + b/gamma|, forced odd."""
     t = int(abs((math.log2(max(int(channels), 1)) + b) / gamma))
@@ -1082,250 +864,6 @@ class ASFFFusion(Layer):
         config.update({"compress": self.compress, "prefer_left": self.prefer_left})
         return config
 
-def attentive_pooling(x, name="att_pool"):
-    """
-    Attentive statistics pooling.
-    Input shape: (Batch, Time, Channels)
-    Output shape: (Batch, 2 * Channels) = weighted mean and standard deviation.
-    """
-    att_weights = layers.Dense(1, activation=None, name=f"{name}_dense")(x)
-    att_weights = layers.Softmax(axis=1, name=f"{name}_softmax")(att_weights)
-
-    mean = layers.Lambda(
-        lambda inputs: ops.sum(inputs[0] * inputs[1], axis=1),
-        name=f"{name}_weighted_sum",
-    )([x, att_weights])
-    second = layers.Lambda(
-        lambda inputs: ops.sum(ops.square(inputs[0]) * inputs[1], axis=1),
-        name=f"{name}_second_moment",
-    )([x, att_weights])
-    std = layers.Lambda(
-        lambda moments: ops.sqrt(ops.relu(moments[0] - ops.square(moments[1])) + 1e-8),
-        name=f"{name}_std",
-    )([second, mean])
-    return layers.Concatenate(axis=-1, name=f"{name}_stats")([mean, std])
-
-def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
-    """
-    Cross-attention conditioning.
-
-    x: (B, T, F, C)
-    speaker_embedding: (B, D)
-    returns: (B, T, F, C)
-    """
-    B, T, F, C = x.shape
-    # Flatten spatial dims: (B, T*F, C)
-    x_flat = Reshape((T * F, C))(x)
-    # Speaker as query: (B, 1, D)
-    q = Reshape((1, speaker_embedding.shape[-1]))(speaker_embedding)
-    # Project to match channels
-    q = Dense(C)(q)
-    # Cross-attention
-    attn = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(
-        query=q, value=x_flat, key=x_flat
-    )
-    # Broadcast back to all positions
-    attn = RepeatVector(T * F)(attn[:, 0, :])
-    # Reshape back to feature map
-    attn_map = Reshape((T, F, C))(attn)
-    # Residual modulation
-    return x + attn_map
-
-@tf.keras.utils.register_keras_serializable()
-class ChunkFullReference(Layer):
-    """Split a full-utterance spectrogram into contiguous time chunks."""
-
-    def __init__(self, chunk_frames=128, **kwargs):
-        super().__init__(**kwargs)
-        self.chunk_frames = int(chunk_frames)
-
-    def call(self, inputs):
-        ref_x, ref_mask = inputs
-        time = ref_x.shape[1]
-        freq = ref_x.shape[2]
-        channels = ref_x.shape[3]
-        if time is None or freq is None or channels is None:
-            raise ValueError("full-utterance reference must have a fixed spectrogram length")
-        if time % self.chunk_frames != 0:
-            raise ValueError(
-                f"reference frames ({time}) must be divisible by chunk size ({self.chunk_frames})"
-            )
-        n_chunks = time // self.chunk_frames
-        ref_x = tf.reshape(ref_x, (-1, n_chunks, self.chunk_frames, freq, channels))
-        frame_mask = tf.reshape(ref_mask, (-1, n_chunks, self.chunk_frames))
-        return ref_x, tf.reduce_max(frame_mask, axis=-1)
-
-    def compute_output_shape(self, input_shape):
-        ref_shape, mask_shape = input_shape
-        time = ref_shape[1]
-        n_chunks = None if time is None else time // self.chunk_frames
-        return [
-            (ref_shape[0], n_chunks, self.chunk_frames, ref_shape[2], ref_shape[3]),
-            (mask_shape[0], n_chunks),
-        ]
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({"chunk_frames": self.chunk_frames})
-        return config
-
-
-@tf.keras.utils.register_keras_serializable()
-class ApplyChunkMask(Layer):
-    def call(self, inputs):
-        sequence, mask = inputs
-        return sequence * tf.expand_dims(tf.cast(mask, sequence.dtype), axis=-1)
-
-    def compute_output_shape(self, input_shape):
-        return input_shape[0]
-
-
-@tf.keras.utils.register_keras_serializable()
-class MaskedAttentivePooling(Layer):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.score = Dense(1, use_bias=True)
-
-    def call(self, inputs):
-        sequence, mask = inputs
-        scores = self.score(sequence)
-        mask = tf.expand_dims(tf.cast(mask, scores.dtype), axis=-1)
-        weights = tf.nn.softmax(scores + (1.0 - mask) * tf.constant(-1e9, dtype=scores.dtype), axis=1)
-        mean = tf.reduce_sum(sequence * weights, axis=1)
-        centered = sequence - tf.expand_dims(mean, axis=1)
-        variance = tf.reduce_sum(weights * tf.square(centered), axis=1)
-        std = tf.sqrt(variance + tf.constant(1e-8, dtype=variance.dtype))
-        return tf.concat([mean, std], axis=-1)
-
-    def compute_output_shape(self, input_shape):
-        sequence_shape, _ = input_shape
-        channels = sequence_shape[-1]
-        if channels is None:
-            return (sequence_shape[0], None)
-        return (sequence_shape[0], channels * 2)
-
-
-def _reference_conv_sequence(ref_enc, filters_ref, num_layers, activation, use_batch_norm, prefix=""):
-    def layer(cls, *args, name=None, **kwargs):
-        if name:
-            kwargs["name"] = name
-        return cls(*args, **kwargs)
-
-    def conv(kernel, name=None):
-        return layer(
-            Conv2D, filters_ref, kernel, activation=activation, padding="same", name=name
-        )
-
-    for l in range(num_layers):
-        original_ref_enc = ref_enc
-        ref_enc_f = TimeDistributed(conv((1, 3), f"{prefix}_fconv_{l}" if prefix else None))(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(layer(BatchNormalization, name=f"{prefix}_fbn_{l}" if prefix else None))(
-                ref_enc_f
-            )
-        ref_enc__t = TimeDistributed(conv((3, 1), f"{prefix}_tconv_{l}" if prefix else None))(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(layer(BatchNormalization, name=f"{prefix}_tbn_{l}" if prefix else None))(
-                ref_enc__t
-            )
-        ref_enc = layer(Concatenate, name=f"{prefix}_cat_{l}" if prefix else None)([ref_enc_f, ref_enc__t])
-        ref_enc_t_1 = TimeDistributed(conv((3, 1), f"{prefix}_tconv_b_{l}" if prefix else None))(
-            original_ref_enc
-        )
-        if use_batch_norm:
-            original_ref_enc = TimeDistributed(
-                layer(BatchNormalization, name=f"{prefix}_tbn_b_{l}" if prefix else None)
-            )(ref_enc_t_1)
-        ref_enc_f_1 = TimeDistributed(conv((1, 3), f"{prefix}_fconv_b_{l}" if prefix else None))(
-            original_ref_enc
-        )
-        if use_batch_norm:
-            original_ref_enc = TimeDistributed(
-                layer(BatchNormalization, name=f"{prefix}_fbn_b_{l}" if prefix else None)
-            )(ref_enc_f_1)
-        ref_enc_branch2 = layer(Concatenate, name=f"{prefix}_cat_b_{l}" if prefix else None)(
-            [ref_enc_t_1, ref_enc_f_1]
-        )
-        ref_enc = layer(Concatenate, name=f"{prefix}_cat_both_{l}" if prefix else None)(
-            [ref_enc, ref_enc_branch2]
-        )
-        ref_enc = TimeDistributed(conv((3, 3), f"{prefix}_joint_{l}" if prefix else None))(ref_enc)
-        if use_batch_norm:
-            ref_enc = TimeDistributed(
-                layer(BatchNormalization, name=f"{prefix}_joint_bn_{l}" if prefix else None)
-            )(ref_enc)
-        ref_enc = TimeDistributed(
-            layer(MaxPooling2D, (1, 2), name=f"{prefix}_pool_{l}" if prefix else None)
-        )(ref_enc)
-        filters_ref *= 2
-    return TimeDistributed(
-        layer(GlobalAveragePooling2D, name=f"{prefix}_gap" if prefix else None)
-    )(ref_enc)
-
-
-def encode_reference_segments(ref_x, filters_ref, num_layers, activation, use_batch_norm):
-    """Encode K fixed reference views sampled from the auxiliary utterance."""
-    ref_seq = _reference_conv_sequence(
-        ref_x, filters_ref, num_layers, activation, use_batch_norm, prefix=""
-    )
-    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=1, prefix="ref")
-    speaker_embed = attentive_pooling(ref_seq, name="speaker_att_pool")
-    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(speaker_embed)
-    ref_seq_mask = SequenceOnes(name="ref_seq_ones")(ref_seq)
-    return speaker_embed, ref_seq, ref_seq_mask
-
-
-def encode_reference_full(
-    ref_x, ref_mask, filters_ref, num_layers, activation, use_batch_norm, chunk_frames=128
-):
-    """Encode one full auxiliary spectrogram.
-
-    Long utterances are split into contiguous ``chunk_frames`` windows, in order.
-    Padded windows are masked out of the chunk sequence and the speaker pool.
-    """
-    ref_views, chunk_mask = ChunkFullReference(chunk_frames=chunk_frames, name="ref_full_chunk")(
-        [ref_x, ref_mask]
-    )
-    ref_seq = _reference_conv_sequence(
-        ref_views, filters_ref, num_layers, activation, use_batch_norm, prefix="ref_full"
-    )
-    ref_seq = ApplyChunkMask(name="ref_full_apply_mask")([ref_seq, chunk_mask])
-    ref_seq = add_xlstm_block(
-        ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=1, prefix="ref_full"
-    )
-    speaker_embed = MaskedAttentivePooling(name="speaker_att_pool")([ref_seq, chunk_mask])
-    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(speaker_embed)
-    return speaker_embed, ref_seq, chunk_mask
-
-
-@tf.keras.utils.register_keras_serializable()
-class SequenceOnes(Layer):
-    def call(self, sequence):
-        return tf.ones_like(sequence[..., 0])
-
-    def compute_output_shape(self, input_shape):
-        return input_shape[:-1]
-
-
-@tf.keras.utils.register_keras_serializable()
-class AttentionMask(Layer):
-    """Broadcast a (batch, keys) mask to (batch, 1, keys) for multi-head attention."""
-
-    def call(self, mask):
-        mask = tf.cast(mask, tf.bool)
-        return tf.expand_dims(mask, axis=1)
-
-
-class TimeOnes(Layer):
-    """Ones over the time axis of a (batch, time, freq, channels) spectrogram."""
-
-    def call(self, spec):
-        ones = tf.ones([tf.shape(spec)[0], tf.shape(spec)[1]], dtype=spec.dtype)
-        if spec.shape[1] is not None:
-            ones.set_shape([None, spec.shape[1]])
-        return ones
-
-
 class STFTFrameSimilarity(Layer):
     """SEF-PNet similarity: guidance = E @ softmax(E^T @ Y), per real and imag.
 
@@ -1362,94 +900,28 @@ class STFTFrameSimilarity(Layer):
         return out
 
 
-def enrollment_cross_attention(x, ref_seq, ref_seq_mask, name="enroll_xattn"):
-    """Each time-frequency bin attends over the enrollment chunk sequence."""
-    time, freq, channels = int(x.shape[1]), int(x.shape[2]), int(x.shape[3])
-    ref_dim = int(ref_seq.shape[-1])
-    queries = Dense(ref_dim, name=f"{name}_q")(x)
-    queries = Reshape((time * freq, ref_dim), name=f"{name}_q_flat")(queries)
-    attn_mask = AttentionMask(name=f"{name}_mask")(ref_seq_mask)
-    attended = MultiHeadAttention(num_heads=4, key_dim=32, name=name)(
-        query=queries, key=ref_seq, value=ref_seq, attention_mask=attn_mask
-    )
-    attended = Reshape((time, freq, ref_dim), name=f"{name}_unflat")(attended)
-    return Conv2D(channels, 1, padding="same", name=f"{name}_proj")(attended)
-
-
-@tf.keras.utils.register_keras_serializable()
-class DropEnrollment(Layer):
-    """Keep the enrollment input in the graph and add nothing to the features."""
-
-    def call(self, inputs):
-        features, *rest = inputs
-        sink = tf.add_n([tf.cast(tf.reduce_sum(tensor), features.dtype) for tensor in rest])
-        return features + sink * 0.0
-
-    def compute_output_shape(self, input_shape):
-        return input_shape[0]
-
-
 def custom_unet(
     input_shape,
-    num_classes=1,
     activation="relu",
     use_batch_norm=True,
-    upsample_mode="deconv",
-    dropout=0.3,
-    dropout_change_per_layer=0.0,
-    dropout_type="spatial",
-    use_dropout_on_upsampling=False,
-    use_attention=False,
     filters=16,
     num_layers=4,
-    output_activation="sigmoid",
-    full_utterance=False,
-    ref_chunk_frames=128,
     max_ref_frames=1280,
-    stft_interact=False,
-    inject="embed",
-    segment_frames=256,
 ):
-    if upsample_mode == "deconv":
-        upsample = upsample_conv
-    else:
-        upsample = upsample_simple
-
-    main_input = Input(input_shape, name="noisy_main")  # (T, F, C)
-    if full_utterance:
-        ref_input = Input((max_ref_frames, input_shape[1], input_shape[2]), name="noisy_ref")
-        ref_mask_input = Input((max_ref_frames,), name="ref_mask")
-        model_inputs = [main_input, ref_input, ref_mask_input]
-    else:
-        ref_input = Input((4, segment_frames, input_shape[1], input_shape[2]), name="noisy_ref")
-        ref_mask_input = None
-        model_inputs = [main_input, ref_input]
-    # Power-law magnitude compression, undone on the network output below.
+    """Early fusion: concatenate the guided enrollment STFT onto the mixture."""
+    upsample = upsample_conv
+    main_input = Input(input_shape, name="noisy_main")
+    ref_input = Input((max_ref_frames, input_shape[1], input_shape[2]), name="noisy_ref")
+    ref_mask_input = Input((max_ref_frames,), name="ref_mask")
     x = PowerLawComplexSpec(factor=MAG_COMPRESS, name="compress_main")(main_input)
     ref_x = PowerLawComplexSpec(factor=MAG_COMPRESS, name="compress_ref")(ref_input)
     main_input_copy = x
-    # --stft-interact is the all-sites guided path. inject selects the sites.
-    if inject != "embed":
-        stft_interact = True
-    guided_sites = _INJECT_SITES.get(inject, _INJECT_SITES["all"])
-
-    if stft_interact and guided_sites:
-        if full_utterance:
-            enroll, enroll_mask = ref_x, ref_mask_input
-        else:
-            views, frames, bins = int(ref_x.shape[1]), int(ref_x.shape[2]), int(ref_x.shape[3])
-            enroll = Reshape((views * frames, bins, 2), name="enroll_flat")(ref_x)
-            enroll_mask = TimeOnes(name="enroll_mask")(enroll)
-        sim_and_mean = STFTFrameSimilarity(name="stft_sim")([x, enroll, enroll_mask])
-        time_bins, freq_bins = int(x.shape[1]), int(x.shape[2])
-        guided = Reshape((time_bins, freq_bins, 2), name="stft_guided")(sim_and_mean[..., 0:2])
-        enroll_mean = Reshape((time_bins, freq_bins, 2), name="stft_mean")(sim_and_mean[..., 2:4])
-        guided = ASFFFusion(name="stft_asff")([guided, enroll_mean])
-        if "early" in guided_sites:
-            x = Concatenate(axis=-1, name="stft_fuse")([x, guided])
-    elif stft_interact:
-        dropped = [x, ref_x] if ref_mask_input is None else [x, ref_x, ref_mask_input]
-        x = DropEnrollment(name="drop_enroll")(dropped)
+    sim_and_mean = STFTFrameSimilarity(name="stft_sim")([x, ref_x, ref_mask_input])
+    time_bins, freq_bins = int(x.shape[1]), int(x.shape[2])
+    guided = Reshape((time_bins, freq_bins, 2), name="stft_guided")(sim_and_mean[..., 0:2])
+    enroll_mean = Reshape((time_bins, freq_bins, 2), name="stft_mean")(sim_and_mean[..., 2:4])
+    guided = ASFFFusion(name="stft_asff")([guided, enroll_mean])
+    x = Concatenate(axis=-1, name="stft_fuse")([x, guided])
 
     # Four stride-2 pools need both axes divisible by 16. The 8 ms hop does not
     # land on that grid (497 x 129), so pad here and crop before the mask.
@@ -1460,112 +932,27 @@ def custom_unet(
     if pad_time or pad_freq:
         x = ZeroPadding2D(padding=((0, pad_time), (0, pad_freq)), name="unet_pad")(x)
 
-    # Full-resolution guided map for the decoder, and the same map pooled onto
-    # the bottleneck grid so ASFF can fuse it before the xLSTM.
-    guided_map = None
-    guided_bn = None
-    if stft_interact and guided_sites & {"bottleneck", "decoder"}:
-        guided_map = guided
-        if pad_time or pad_freq:
-            guided_map = ZeroPadding2D(
-                padding=((0, pad_time), (0, pad_freq)), name="guided_pad"
-            )(guided_map)
-        if "bottleneck" in guided_sites:
-            guided_bn = guided_map
-            for level in range(num_layers):
-                guided_bn = AveragePooling2D((2, 2), name=f"guided_pool_{level}")(guided_bn)
-
     down_layers = []
     for l in range(num_layers):
-        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        x = tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
         x = eca_block(x, name=f"enc_eca_{l}")
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
-        dropout += dropout_change_per_layer
         filters = int(filters * 1.5)
 
-    if inject == "embed":
-        filters_ref = filters // (2**num_layers)
-        if full_utterance:
-            speaker_embed, ref_seq, ref_seq_mask = encode_reference_full(
-                ref_x,
-                ref_mask_input,
-                filters_ref,
-                num_layers,
-                activation,
-                use_batch_norm,
-                chunk_frames=ref_chunk_frames,
-            )
-        else:
-            speaker_embed, ref_seq, ref_seq_mask = encode_reference_segments(
-                ref_x, filters_ref, num_layers, activation, use_batch_norm
-            )
-
-        x_film = film(x, speaker_embed)
-        attn_map = enrollment_cross_attention(x, ref_seq, ref_seq_mask, name="bn_enroll_xattn")
-        x = ASFFFusion(name="bn_asff")([x_film, attn_map])
-        x = eca_block(x, name="bn_eca")
-    # Fuse the cue into the encoder map so the xLSTM reads it. Doing this after
-    # the xLSTM leaves the sequence model on the mixture alone.
-    if stft_interact and "bottleneck" in guided_sites:
-        guided_proj = Conv2D(int(x.shape[-1]), 1, padding="same", name="bn_guided_proj")(guided_bn)
-        x = ASFFFusion(name="bn_guided_asff")([x, guided_proj])
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]
     x_seq = Reshape((T_small, F_small * C_small))(x)
     x_seq = add_xlstm_block(x_seq, hidden_dim=128, num_layers=1, prefix="main_bottleneck")
     x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
     x_reshaped = Reshape((T_small, F_small, C_small))(x_expanded)
     x = Conv2D(C_small, (1, 1), padding="same", activation=activation, name="bn_reconstruct")(x_reshaped)
-    # if not use_dropout_on_upsampling:
-    #     dropout = 0.0
-    #     dropout_change_per_layer = 0.0
-    if stft_interact and "decoder" in guided_sites:
-        for conv in reversed(down_layers):
-            filters = conv.shape[-1]
-            x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
-            if use_attention:
-                x = attention_concat(conv_below=x, skip_connection=conv)
-            else:
-                x = concatenate([x, conv])
-            guided_here = Resizing(
-                int(x.shape[1]),
-                int(x.shape[2]),
-                interpolation="bilinear",
-                name=f"up_guided_{filters}",
-            )(guided_map)
-            x = Concatenate(axis=-1, name=f"up_guided_cat_{filters}")([x, guided_here])
-            x = tf_alternating_block(
-                x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}"
-            )
-    elif inject == "embed":
-        spk_field = attn_map
-        for conv in reversed(down_layers):
-            filters = conv.shape[-1]
-            # dropout -= dropout_change_per_layer
-            x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
-            spk_field = UpSampling2D((2, 2), interpolation="bilinear", name=f"up_spk_{filters}")(spk_field)
-            x = film(x, speaker_embed)
-            if use_attention:
-                x = attention_concat(conv_below=x, skip_connection=conv)
-            else:
-                x = concatenate([x, conv])
-
-            spk_res_up = Conv2D(
-                int(x.shape[-1]), 1, padding="same", name=f"up_spk_proj_{filters}"
-            )(spk_field)
-            x = ASFFFusion(name=f"up_asff_{filters}")([x, spk_res_up])
-            x = tf_alternating_block(x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}")
-    else:
-        for conv in reversed(down_layers):
-            filters = conv.shape[-1]
-            x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
-            if use_attention:
-                x = attention_concat(conv_below=x, skip_connection=conv)
-            else:
-                x = concatenate([x, conv])
-            x = tf_alternating_block(
-                x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}"
-            )
+    for conv in reversed(down_layers):
+        filters = conv.shape[-1]
+        x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
+        x = concatenate([x, conv])
+        x = tf_alternating_block(
+            x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}"
+        )
     if pad_time or pad_freq:
         x = Cropping2D(cropping=((0, pad_time), (0, pad_freq)), name="unet_crop")(x)
     input_r = main_input_copy[..., 0:1]
@@ -1587,48 +974,22 @@ def custom_unet(
     out_r = layers.Add()([input_r, out_r])
     out_i = layers.Add()([input_i, out_i])
 
-    # --- Merge back to 2-channel and undo magnitude compression ---
     outputs = Concatenate(axis=-1)([out_r, out_i])
     outputs = PowerLawComplexSpec(factor=1.0 / MAG_COMPRESS, name="decompress_out")(outputs)
-
-    return Model(inputs=model_inputs, outputs=[outputs])
+    return Model(inputs=[main_input, ref_input, ref_mask_input], outputs=[outputs])
 
 
 model_filename = _checkpoint_filename(args.l.replace("-", "_") if args.l is not None else "si_sdr")
-model = custom_unet(
-    input_shape=(N_FRAMES, N_BINS, 2),
-    use_batch_norm=True,
-    num_classes=2,
-    filters=50,
-    use_dropout_on_upsampling=False,
-    num_layers=4,
-    use_attention=False,
-    upsample_mode="deconv",
-    dropout=0.3,
-    output_activation="sigmoid",
-    full_utterance=args.full_utterance,
-    ref_chunk_frames=REF_CHUNK_FRAMES,
-    max_ref_frames=MAX_REF_FRAMES,
-    stft_interact=args.stft_interact,
-    inject=INJECT,
-    segment_frames=REF_SEGMENT_FRAMES,
-)
-callbacks = [
-    ModelCheckpoint(
-        model_filename,
-        monitor="val_loss",
-        save_best_only=True,
-        save_weights_only=False,
-        verbose=1,
-    ),
-    # EarlyStopping(
-    #     monitor="val_loss",
-    #     patience=100,
-    #     min_delta=0.00001,
-    #     restore_best_weights=True,
-    #     verbose=1,
-    # ),
-]
+
+
+def _build_model():
+    return custom_unet(
+        input_shape=(N_FRAMES, N_BINS, 2),
+        use_batch_norm=True,
+        filters=50,
+        num_layers=4,
+        max_ref_frames=MAX_REF_FRAMES,
+    )
 
 
 # Kolbaek, Tan, Jensen, Jensen, "On Loss Functions for Supervised Monaural
@@ -2117,9 +1478,6 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
             2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
 
 
-model.summary()
-
-
 SR = 8000
 
 
@@ -2140,12 +1498,8 @@ def sample_reference_segments_full(wav, K, segment_len):
 
 
 def enhance_audio_consistent(noisy_wav, ref_wav, model, K=4, overlap=0.5):
-    if args.full_utterance:
-        return _WAVEFORM_ENHANCER.enhance_audio_full_utterance(
-            noisy_wav, ref_wav, model, overlap=overlap, max_ref_frames=MAX_REF_FRAMES
-        )
-    return _WAVEFORM_ENHANCER.enhance_audio_consistent(
-        noisy_wav, ref_wav, model, K=K, overlap=overlap
+    return _WAVEFORM_ENHANCER.enhance_audio_full_utterance(
+        noisy_wav, ref_wav, model, overlap=overlap, max_ref_frames=MAX_REF_FRAMES
     )
 
 
@@ -2256,17 +1610,14 @@ def main():
 
 # ==========================================================
 if args.l is None:
+    model = _build_model()
+    model.summary()
     eval_weights = _checkpoint_filename("si_sdr")
     model.load_weights(eval_weights)
     model.trainable = False
     print("Model loaded for inference")
     main()
 else:
-    if not args.full_utterance:
-        raise SystemExit(
-            "The SEF-PNet trainer feeds the whole enrollment utterance. "
-            "Pass --full-utterance."
-        )
     from libri2mix.conf_unet_tse_32ms import chunk_size, dev_data, train_data, trainer_conf
     from libri2mix.dataset_tse import make_dataloader
     from libri2mix.trainer_tse import SiSnrTrainer, chunk_frames_match
@@ -2276,16 +1627,33 @@ else:
             f"Chunk STFT frames {conv_stft_frames(chunk_size, frame_length, frame_step)} "
             f"do not match the model input {N_FRAMES}."
         )
+    visible = tf.config.list_physical_devices("GPU")
+    if not visible:
+        raise SystemExit("Early fusion training needs a GPU.")
+    strategy = tf.distribute.MirroredStrategy()
+    num_gpus = strategy.num_replicas_in_sync
+    if num_gpus != len(visible):
+        raise SystemExit(
+            f"MirroredStrategy has {num_gpus} replicas, but {len(visible)} GPUs are visible."
+        )
+    batch_size = PER_GPU_BATCH * num_gpus
+    with strategy.scope():
+        model = _build_model()
+        trainer = SiSnrTrainer(
+            model,
+            _AUDIO_TOOLKIT,
+            MAX_REF_FRAMES,
+            model_filename,
+            logging_period=trainer_conf["logging_period"],
+            strategy=strategy,
+        )
+    model.summary()
     print(f"Training with SEF-PNet SiSnrTrainer ({LOSS_LABELS[args.l]})")
     print(f"Checkpoint: {model_filename}")
     run_epochs = EPOCHS if args.epochs is None else args.epochs
-    print(f"Adam lr={trainer_conf['optimizer_kwargs']['lr']}, batch {batch_size}, epochs {run_epochs}")
-    trainer = SiSnrTrainer(
-        model,
-        _AUDIO_TOOLKIT,
-        MAX_REF_FRAMES,
-        model_filename,
-        logging_period=trainer_conf["logging_period"],
+    print(
+        f"Adam lr={trainer_conf['optimizer_kwargs']['lr']}, "
+        f"batch {batch_size} ({PER_GPU_BATCH} per GPU x {num_gpus}), epochs {run_epochs}"
     )
     trainer.run(
         make_dataloader(

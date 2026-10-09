@@ -1,42 +1,31 @@
 #!/usr/bin/env bash
-# Where the enrollment cue enters the U-Net.
-#
-# Claim: concatenating the guided spectrogram onto the mixture at the input
-# lets the encoder pool that cue away. Injecting the same cue at the bottleneck
-# and in the decoder should beat that early concatenate.
-#
-# Every run uses the same guided STFT, loss, data, and full-utterance trainer.
-# The only change is --inject.
-#
-#   none         enrollment is ignored
-#   early        input concatenate only                 (the diluted case)
-#   bottleneck   ASFF after the xLSTM only
-#   decoder      concatenate at each decoder stage only
-#   late         bottleneck + decoder                   (the proposed injection)
-#   all          early + bottleneck + decoder           (current --stft-interact graph)
-#
-# Dev SI-SDR that supports the claim:
-#   none < early < late, and late >= all.
-# decoder above early isolates depth, because both use concatenation.
-# bottleneck above early mixes a better fusion operator into the comparison.
+# Early fusion: the guided spectrogram is concatenated onto the mixture.
+# One process. Each GPU holds 16 clips. Three free cards train at batch 48.
+# One free card trains at batch 16.
 #
 # Usage:
+#   ./scripts/speaker_dilution.sh
 #   ./scripts/speaker_dilution.sh gpus
-#   ./scripts/speaker_dilution.sh early
-#   EPOCHS=20 ./scripts/speaker_dilution.sh late
-#   ./scripts/speaker_dilution.sh series
+#   EPOCHS=20 ./scripts/speaker_dilution.sh
+#   BATCH=8 ./scripts/speaker_dilution.sh
 #
-# series places one condition on each free GPU and queues the rest.
-# A card is free when it has no compute process and is under GPU_FREE_MIB
-# MiB (default 4096). Logs are logs/inject_<name>.log.
+# gpus prints which cards are free. A card is free when it has no compute
+# process and is under GPU_FREE_MIB MiB (default 4096). The job uses the first
+# 3 free cards, or the one free card when that is all there is. LOSS defaults
+# to si-sdr. EPOCHS defaults to 200. BATCH is clips per GPU and defaults to 16,
+# so one card trains at 16 and three cards train at 48.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 LOSS="${LOSS:-si-sdr}"
 EPOCHS="${EPOCHS:-200}"
 GPU_FREE_MIB="${GPU_FREE_MIB:-4096}"
-LOG_DIR="${LOG_DIR:-logs}"
-CONDITIONS=(none early bottleneck decoder late all)
+MAX_GPUS=3
+PER_GPU_BATCH="${BATCH:-16}"
+if ! [[ "${PER_GPU_BATCH}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "BATCH must be a positive integer (clips per GPU)." >&2
+  exit 2
+fi
 
 # GeForce rejects the newer CUDA compat library. Point libcuda.so.1 at the
 # driver build (libcuda.so.535.274.02, not libcuda.so.535).
@@ -116,94 +105,40 @@ free_gpus() {
   done < <(nvidia-smi --query-gpu=index,uuid,memory.used,name --format=csv,noheader,nounits)
 }
 
-run_foreground() {
-  echo "=== inject=$1 loss=${LOSS} epochs=${EPOCHS} ==="
-  python train.py --l "${LOSS}" --full-utterance --inject "$1" --epochs "${EPOCHS}"
-}
-
-launch() {
-  local gpu="$1" name="$2" log
-  mkdir -p "${LOG_DIR}"
-  log="${LOG_DIR}/inject_${name}.log"
-  echo "GPU ${gpu}: inject=${name} loss=${LOSS} epochs=${EPOCHS} -> ${log}" >&2
-  CUDA_VISIBLE_DEVICES="${gpu}" PYTHONUNBUFFERED=1 \
-    python train.py --l "${LOSS}" --full-utterance --inject "${name}" --epochs "${EPOCHS}" \
-    >"${log}" 2>&1 &
-  LAUNCH_PID=$!
-}
-
-run_series() {
-  local -a gpus=() queue=("${CONDITIONS[@]}")
-  local -A pid_gpu=() pid_name=()
-  local failed=0 next=0 name gpu pid
+run_early() {
+  local -a gpus=()
+  local devices="" n batch
   mapfile -t gpus < <(free_gpus)
   if ((${#gpus[@]} == 0)); then
     echo "No free GPU under ${GPU_FREE_MIB} MiB." >&2
     exit 1
   fi
-  echo "Scheduling ${#queue[@]} conditions on ${#gpus[@]} free GPU(s)."
-
-  while (( next < ${#queue[@]} )) || ((${#pid_gpu[@]})); do
-    if ((${#pid_gpu[@]})); then
-      local -a finished=()
-      for pid in "${!pid_gpu[@]}"; do
-        if ! kill -0 "${pid}" 2>/dev/null; then
-          finished+=("${pid}")
-        fi
-      done
-      for pid in "${finished[@]+"${finished[@]}"}"; do
-        gpu="${pid_gpu[${pid}]}"
-        name="${pid_name[${pid}]}"
-        if wait "${pid}"; then
-          echo "done inject=${name} on GPU ${gpu}"
-        else
-          echo "FAILED inject=${name} on GPU ${gpu}. See ${LOG_DIR}/inject_${name}.log" >&2
-          failed=$((failed + 1))
-        fi
-        unset "pid_gpu[${pid}]" "pid_name[${pid}]"
-        gpus+=("${gpu}")
-      done
-    fi
-    while (( next < ${#queue[@]} && ${#gpus[@]} )); do
-      name="${queue[${next}]}"
-      next=$((next + 1))
-      gpu="${gpus[0]}"
-      if ((${#gpus[@]} > 1)); then
-        gpus=("${gpus[@]:1}")
-      else
-        gpus=()
-      fi
-      launch "${gpu}" "${name}"
-      pid_gpu["${LAUNCH_PID}"]="${gpu}"
-      pid_name["${LAUNCH_PID}"]="${name}"
-    done
-    if ((${#pid_gpu[@]})); then
-      sleep 15
-    fi
-  done
-  if ((failed)); then
-    echo "${failed} condition(s) failed." >&2
-    exit 1
+  n=${#gpus[@]}
+  if ((n > MAX_GPUS)); then
+    n=$MAX_GPUS
   fi
-  echo "All ${#CONDITIONS[@]} conditions finished."
+  devices="$(printf '%s,' "${gpus[@]:0:n}")"
+  devices="${devices%,}"
+  batch=$((PER_GPU_BATCH * n))
+  echo "=== early fusion loss=${LOSS} epochs=${EPOCHS} batch=${batch} (${PER_GPU_BATCH} per GPU x ${n}) gpus=${devices} ==="
+  CUDA_VISIBLE_DEVICES="${devices}" PYTHONUNBUFFERED=1 \
+    python train.py --l "${LOSS}" --epochs "${EPOCHS}" --batch "${PER_GPU_BATCH}"
 }
 
 LIMIT_GPUS="${CUDA_VISIBLE_DEVICES:-}"
 align_libcuda
 
-target="${1:-}"
+target="${1:-train}"
 case "${target}" in
   gpus)
     free_gpus >/dev/null
     ;;
-  none|early|bottleneck|decoder|late|all)
-    run_foreground "${target}"
-    ;;
-  series)
-    run_series
+  train)
+    run_early
     ;;
   *)
-    echo "Usage: $0 {gpus|none|early|bottleneck|decoder|late|all|series}" >&2
+    echo "Usage: $0 [train|gpus]" >&2
+    echo "Early fusion only. BATCH is clips per GPU (default 16)." >&2
     exit 2
     ;;
 esac

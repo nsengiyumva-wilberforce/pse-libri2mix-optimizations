@@ -16,47 +16,24 @@ data/{train,dev,test}/ref.scp         # target
 
 ## Train and evaluate
 
-Training uses the full enrollment utterance. The default schedule is 200 epochs. Adam starts at `5e-4`.
+Training uses the full enrollment utterance. The cue is early fusion: frame similarity mixed with the enrollment mean, concatenated onto the mixture. The default schedule is 200 epochs. Adam starts at `5e-4`. Each GPU holds 16 clips, so one GPU trains at batch 16 and three GPUs train at batch 48.
 
 ```bash
-python train.py --l si-sdr --full-utterance
+./scripts/speaker_dilution.sh
+EPOCHS=20 ./scripts/speaker_dilution.sh
+BATCH=8 ./scripts/speaker_dilution.sh
 ```
+
+`BATCH` is clips per GPU and defaults to 16. One GPU then trains at 8. Three GPUs train at 24.
 
 `--l` is one of `time-mse`, `stsa-mse`, `stoi`, `estoi`, `si-sdr`, `pmsqe`. Omit it to evaluate the saved `si-sdr` checkpoint. Scores are SI-SDR, PESQ, and STOI, written to `evaluation_results_full.csv`. Paste a summary into `RESULTS.MD`.
 
 ```bash
-python train.py --full-utterance
+python train.py
 ```
 
-Pass the same `--inject` or `--stft-interact` flag you trained with, or the loader looks for a different file.
-
-## Where the enrollment cue goes
-
-The default model injects a speaker embedding with FiLM and enrollment cross-attention at the bottleneck and in the decoder.
-
-The dilution series uses one guided STFT (frame similarity mixed with the enrollment mean) and changes only the insertion point. Concatenating that map onto the mixture at the input lets the encoder pool the cue away. Putting the same map back at the bottleneck and in the decoder is the alternative.
-
-| `--inject` | Cue |
-|---|---|
-| `none` | Ignored. The enrollment input stays in the graph and adds nothing. |
-| `early` | Concatenated onto the mixture. This is the diluted case. |
-| `bottleneck` | ASFF into the bottleneck map, then the xLSTM. |
-| `decoder` | Concatenated at each decoder stage. |
-| `late` | Bottleneck and decoder. This is the proposed injection. |
-| `all` | Input, bottleneck, and decoder. |
-
-`--stft-interact` is the `all` graph with the older checkpoint name.
-
-`decoder` against `early` holds the operator fixed at concatenation, so a gain there is depth. `bottleneck` against `early` also swaps in ASFF. On dev SI-SDR, the claim holds when `none < early < late` and `late` is at least as high as `all`. The six graphs are about 6.61M to 6.64M parameters.
-
-```bash
-./scripts/speaker_dilution.sh early
-EPOCHS=20 ./scripts/speaker_dilution.sh late
-./scripts/speaker_dilution.sh series
-```
-
-`LOSS` defaults to `si-sdr`. `EPOCHS` defaults to 200. `gpus` only prints which cards are free. A single condition stays in this terminal. `series` runs `none`, `early`, `bottleneck`, `decoder`, `late`, then `all`, one condition per free GPU, and queues the rest. A card counts as free when it has no compute process and is using under `GPU_FREE_MIB` MiB (default 4096). Epoch lines for a series are in `logs/inject_<name>.log`. The script also prefers the host `libcuda` over the CUDA compat library, which these 4090s reject when it is newer than driver 535.
+`LOSS` defaults to `si-sdr`. `EPOCHS` defaults to 200. `gpus` only prints which cards are free. Training takes the first 3 free cards, or the single free card on a one-GPU machine. A card counts as free when it has no compute process and is using under `GPU_FREE_MIB` MiB (default 4096). The script also prefers the host `libcuda` over the CUDA compat library, which these 4090s reject when it is newer than driver 535.
 
 ## Checkpoints
 
-Files are named from the loss, then the run suffixes. An injection run ends in `_inject_<name>.keras`, for example `_inject_late.keras`. `--stft-interact` without `--inject` keeps `_stft` in the name and does not add `_inject_all`. Each condition writes its own file.
+The file name ends in `_inject_early.keras`. Evaluation loads the `si-sdr` checkpoint with that suffix.
