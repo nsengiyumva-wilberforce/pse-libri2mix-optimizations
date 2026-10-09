@@ -40,7 +40,7 @@ The dilution series uses one guided STFT (frame similarity mixed with the enroll
 |---|---|
 | `none` | Ignored. The enrollment input stays in the graph and adds nothing. |
 | `early` | Concatenated onto the mixture. This is the diluted case. |
-| `bottleneck` | ASFF after the xLSTM. |
+| `bottleneck` | ASFF into the bottleneck map, then the xLSTM. |
 | `decoder` | Concatenated at each decoder stage. |
 | `late` | Bottleneck and decoder. This is the proposed injection. |
 | `all` | Input, bottleneck, and decoder. |
