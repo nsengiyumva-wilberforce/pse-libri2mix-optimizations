@@ -9,6 +9,32 @@ import tensorflow as tf
 from .audio import AudioToolkit, complex_to_2ch, conv_stft_frames
 
 
+def _full_utterance_forward(model, noisy, ref, mask):
+    """One forward on the whole mixture. The time axis stays symbolic so every file reuses one graph."""
+    infer = getattr(model, "_full_pass", None)
+    if infer is None:
+        n_bins = int(noisy.shape[-2])
+        ref_frames = int(ref.shape[1])
+
+        @tf.function(
+            input_signature=[
+                tf.TensorSpec([1, None, n_bins, 2], tf.float32),
+                tf.TensorSpec([1, ref_frames, n_bins, 2], tf.float32),
+                tf.TensorSpec([1, ref_frames], tf.float32),
+            ],
+            jit_compile=False,
+        )
+        def infer(noisy_spec, ref_spec, ref_mask):
+            output = model([noisy_spec, ref_spec, ref_mask], training=False)
+            if isinstance(output, (list, tuple)):
+                output = output[0]
+            return output
+
+        model._full_pass = infer
+    output = infer(noisy, ref, mask)
+    return output[0]
+
+
 @dataclass
 class WaveformEnhancer:
     audio_toolkit: AudioToolkit
@@ -123,14 +149,6 @@ class WaveformEnhancer:
         noisy_wav = noisy_wav.numpy()
         ref_wav = tf.cast(ref_wav, tf.float32)
 
-        if not (0.0 < overlap < 1.0):
-            raise ValueError("overlap must be in the open interval (0, 1)")
-
-        chunk_len = self.chunk_size
-        hop_len = int(chunk_len * (1 - overlap))
-        if hop_len <= 0:
-            raise ValueError("overlap produces an invalid hop length")
-
         total_len = len(noisy_wav)
         if total_len == 0:
             return noisy_wav.astype(np.float32)
@@ -143,48 +161,24 @@ class WaveformEnhancer:
         if not np.isfinite(ref_specs.numpy()).all():
             raise ValueError("reference spectrogram contains NaN or Inf")
 
-        enhanced_output = np.zeros(total_len)
-        window_sum = np.zeros(total_len)
-        window = np.ones(chunk_len, dtype=np.float32)
+        noisy_tf = tf.convert_to_tensor(noisy_wav, tf.float32)
+        noisy_spec = self.audio_toolkit.stft(noisy_tf)
+        noisy_2ch = complex_to_2ch(noisy_spec)[None, ...]
+        if not np.isfinite(noisy_2ch.numpy()).all():
+            raise ValueError("input spectrogram contains NaN or Inf")
 
-        for start in range(0, total_len, hop_len):
-            end = start + chunk_len
-            chunk = noisy_wav[start:end]
-            if len(chunk) < chunk_len:
-                chunk = np.pad(chunk, (0, chunk_len - len(chunk)))
+        enhanced = _full_utterance_forward(model, noisy_2ch, ref_specs, ref_mask)
+        enhanced = np.asarray(enhanced)
+        if enhanced.ndim != 3 or enhanced.shape[-1] != 2:
+            raise ValueError(f"unexpected model output shape: {enhanced.shape}")
+        if not np.isfinite(enhanced).all():
+            raise ValueError("model output contains NaN or Inf")
 
-            chunk_tf = tf.convert_to_tensor(chunk, tf.float32)
-            noisy_spec = self.audio_toolkit.stft(chunk_tf)
-            noisy_2ch = complex_to_2ch(noisy_spec)[None, ...]
-            if not np.isfinite(noisy_2ch.numpy()).all():
-                raise ValueError("input spectrogram contains NaN or Inf")
-
-            enhanced_2ch = model.predict([noisy_2ch, ref_specs, ref_mask], verbose=0)[0]
-            enhanced_2ch = np.asarray(enhanced_2ch)
-            if enhanced_2ch.ndim != 3 or enhanced_2ch.shape[-1] != 2:
-                raise ValueError(f"unexpected model output shape: {enhanced_2ch.shape}")
-            if not np.isfinite(enhanced_2ch).all():
-                raise ValueError("model output contains NaN or Inf")
-
-            enhanced_complex = tf.complex(enhanced_2ch[..., 0], enhanced_2ch[..., 1])
-            enhanced_chunk = self.audio_toolkit.istft(enhanced_complex).numpy()
-            if not np.isfinite(enhanced_chunk).all():
-                raise ValueError("inverse STFT produced NaN or Inf")
-
-            valid_end = min(start + len(enhanced_chunk), total_len)
-            valid_len = valid_end - start
-            enhanced_output[start:valid_end] += enhanced_chunk[:valid_len] * window[:valid_len]
-            window_sum[start:valid_end] += window[:valid_len]
-
-            if end >= total_len:
-                break
-
-        window_sum[window_sum == 0] = 1e-8
-        enhanced_output /= window_sum
-        if not np.isfinite(enhanced_output).all():
-            raise ValueError("enhanced output contains NaN or Inf")
-
-        return enhanced_output.astype(np.float32)
+        enhanced_complex = tf.complex(enhanced[..., 0], enhanced[..., 1])
+        enhanced_wav = self.audio_toolkit.istft(enhanced_complex).numpy()
+        if not np.isfinite(enhanced_wav).all():
+            raise ValueError("inverse STFT produced NaN or Inf")
+        return enhanced_wav[:total_len].astype(np.float32)
 
 
 _DEFAULT_ENHANCER = WaveformEnhancer(AudioToolkit(), chunk_size=31000, frame_length=400, frame_step=160, n_fft=510)

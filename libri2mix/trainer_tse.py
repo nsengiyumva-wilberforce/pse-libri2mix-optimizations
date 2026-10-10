@@ -1,16 +1,17 @@
 """SEF-PNet's SiSnrTrainer, driving the Keras enhancer.
 
-Matches nnet/libs/trainer_unet_tse_steplr_clip.py and train.sh:
+Matches the SEF-PNet paper schedule:
 
 - Adam learning rate 5e-4, weight decay 1e-5, global-norm clip 1
 - through epoch 100, multiply the learning rate by 0.98 every 2 epochs
-- after that, multiply it by 0.9 every epoch
+- for the last 20 epochs, multiply it by 0.9 every epoch
+- stop at 120 epochs
 - loss is the mean of negative waveform SI-SNR, with samples past valid_len zeroed
-- plus a small penalty on the fraction of estimate energy that lies along mix - target
 
 The chunk loader yields waveforms. This loop converts them with the convolution
 STFT, runs the enhancer, and scores the waveform, so the schedule counts
-optimizer steps on chunks rather than utterances.
+optimizer steps on chunks rather than utterances. Each enrollment is padded to
+the longest one in the batch, and that zero pad stays in the STFT.
 """
 
 import queue
@@ -22,8 +23,11 @@ import tensorflow as tf
 from .audio import conv_stft_frames
 from .conf_unet_tse_32ms import adam_kwargs
 
-# How strongly to punish estimate energy that lies along the other speaker.
-INTERFERER_WEIGHT = 0.1
+# bfloat16 compute, float32 weights. The 4090 tensor cores run this without
+# loss scaling. The policy has to be set before the enhancer is built, and
+# this module is imported before _build_model().
+tf.keras.mixed_precision.set_global_policy("mixed_bfloat16")
+
 # Longest auxiliary in this corpus is 17.61 s. A fixed width keeps the compiled step.
 _MAX_AUX_SECONDS = 18
 
@@ -40,30 +44,19 @@ def _sisnr(estimate, reference, eps=1e-8):
     return 20.0 * tf.math.log(ratio + eps) / tf.math.log(10.0)
 
 
-def _interferer_leak(estimate, interferer, eps=1e-8):
-    """10 log10 of the fraction of estimate energy lying along the interferer.
-
-    More negative means less of the other speaker remains. Scale-invariant.
-    """
-    estimate = estimate - tf.reduce_mean(estimate, axis=-1, keepdims=True)
-    interferer = interferer - tf.reduce_mean(interferer, axis=-1, keepdims=True)
-    denom = tf.reduce_sum(tf.square(interferer), axis=-1, keepdims=True) + eps
-    dot = tf.reduce_sum(estimate * interferer, axis=-1, keepdims=True)
-    leak = (dot / denom) * interferer
-    ratio = tf.reduce_sum(tf.square(leak), axis=-1) / (
-        tf.reduce_sum(tf.square(estimate), axis=-1) + eps
-    )
-    return 10.0 * tf.math.log(ratio + eps) / tf.math.log(10.0)
-
-
 def _mask_by_length(waveforms, lengths):
     positions = tf.range(tf.shape(waveforms)[-1])
     mask = tf.cast(positions[None, :] < tf.cast(lengths, tf.int32)[:, None], waveforms.dtype)
     return waveforms * mask
 
 
-def _enrollment_batch(toolkit, aux, aux_len, max_frames):
-    """Pad a batch of enrollment waveforms to the static spectrogram length."""
+def _enrollment_batch(toolkit, aux, pad_len, max_frames):
+    """STFT enrollments that are already padded to the longest in the batch.
+
+    ``aux`` is then padded out to a fixed width so the compiled step keeps one
+    graph. Frames past that batch STFT are masked off. The zeros inside the
+    batch pad stay visible, which is what SEF-PNet's ``wav2spec`` averages.
+    """
     spectrum = toolkit.stft(tf.convert_to_tensor(aux, tf.float32))
     frames = tf.shape(spectrum)[1]
     bins = spectrum.shape[-1]
@@ -74,14 +67,12 @@ def _enrollment_batch(toolkit, aux, aux_len, max_frames):
 
     win = toolkit.frame_length
     hop = toolkit.frame_step
-    edge = win - hop
+    # Frame count of the convolution STFT on a waveform of length pad_len.
+    n_valid = (tf.cast(pad_len, tf.int32) + 2 * (win - hop) - win) // hop + 1
     index = tf.range(max_frames)
-    start = index * hop
-    end = start + win
-    real_end = edge + tf.cast(aux_len, tf.int32)
-    valid = tf.logical_and(start[None, :] < real_end[:, None], end[None, :] > edge)
-    # Frames past this batch's spectrogram are padding.
-    valid = tf.logical_and(valid, index[None, :] < frames)
+    valid = tf.logical_and(index[None, :] < n_valid, index[None, :] < frames)
+    batch = tf.shape(spectrum)[0]
+    valid = tf.broadcast_to(valid, [batch, max_frames])
     return spec_2ch, tf.cast(valid, tf.float32)
 
 
@@ -115,6 +106,10 @@ class SiSnrTrainer(object):
         for variable in self.optimizer.variables:
             if hasattr(variable, "numpy"):
                 variable.numpy()
+        # XLA compiles the replica step only. Compiling the function that calls
+        # strategy.run makes GPU 0 read replica variables that live on GPU 1.
+        self._xla_train = tf.function(self._train_replica, jit_compile=True)
+        self._xla_eval = tf.function(self._eval_replica, jit_compile=True)
 
     def _waveforms(self, mix, reference, aux_spec, aux_mask, training):
         mix_spec = self.toolkit.stft(mix)
@@ -126,6 +121,8 @@ class SiSnrTrainer(object):
             },
             training=training,
         )
+        # The network may emit bfloat16. The convolution ISTFT and SI-SNR stay float32.
+        predicted = tf.cast(predicted, tf.float32)
         estimate = self.toolkit.istft(tf.complex(predicted[..., 0], predicted[..., 1]))
         # Score against the chunk waveform, as SiSnrTrainer does, not a second STFT.
         target = reference
@@ -139,12 +136,12 @@ class SiSnrTrainer(object):
             target = target[..., :width]
         return estimate, target
 
-    def _replica_batch(self, mix, reference, valid_len, aux, aux_len):
+    def _replica_batch(self, mix, reference, valid_len, aux):
         """Each replica keeps an equal slice of the global batch."""
         ctx = tf.distribute.get_replica_context()
         n = 1 if ctx is None else ctx.num_replicas_in_sync
         if n == 1:
-            return mix, reference, valid_len, aux, aux_len
+            return mix, reference, valid_len, aux
         per = tf.shape(mix)[0] // n
         start = ctx.replica_id_in_sync_group * per
         stop = start + per
@@ -153,33 +150,28 @@ class SiSnrTrainer(object):
             reference[start:stop],
             valid_len[start:stop],
             aux[start:stop],
-            aux_len[start:stop],
         )
 
-    def compute_loss(self, mix, reference, valid_len, aux, aux_len, training):
-        mix, reference, valid_len, aux, aux_len = self._replica_batch(
-            mix, reference, valid_len, aux, aux_len
-        )
-        aux_spec, aux_mask = _enrollment_batch(self.toolkit, aux, aux_len, self.max_ref_frames)
+    def compute_loss(self, mix, reference, valid_len, aux, pad_len, training):
+        aux_spec, aux_mask = _enrollment_batch(self.toolkit, aux, pad_len, self.max_ref_frames)
         estimate, target = self._waveforms(mix, reference, aux_spec, aux_mask, training)
-        mix = mix[..., : tf.shape(estimate)[-1]]
         estimate = _mask_by_length(estimate, valid_len)
         target = _mask_by_length(target, valid_len)
-        mix = _mask_by_length(mix, valid_len)
-        # mix_clean is target + interferer, so the other speaker is this residual.
-        interferer = mix - target
         sisdr = _sisnr(estimate, target)
-        leak = _interferer_leak(estimate, interferer)
-        objective = -tf.reduce_mean(sisdr) + INTERFERER_WEIGHT * tf.reduce_mean(leak)
+        # SEF-PNet: -sum(sisnr) / N, which is the mean of the per-clip scores.
+        objective = -tf.reduce_mean(sisdr)
         return objective, tf.reduce_mean(sisdr)
 
     def _batch_tensors(self, batch):
+        aux = tf.convert_to_tensor(batch["aux"], tf.float32)
+        # Length after the loader pads every enrollment to the longest in the batch.
+        pad_len = tf.cast(tf.shape(aux)[1], tf.int32)
         return (
             tf.convert_to_tensor(batch["mix"], tf.float32),
             tf.convert_to_tensor(batch["ref"], tf.float32),
             tf.convert_to_tensor(batch["valid_len"], tf.int32),
-            self._pad_aux_wave(tf.convert_to_tensor(batch["aux"], tf.float32)),
-            tf.convert_to_tensor(batch["aux_len"], tf.int32),
+            self._pad_aux_wave(aux),
+            pad_len,
         )
 
     def _pad_aux_wave(self, aux):
@@ -198,27 +190,46 @@ class SiSnrTrainer(object):
         sisdr = self.strategy.reduce(tf.distribute.ReduceOp.MEAN, per_sisdr, axis=None)
         return loss, sisdr
 
+    def _train_replica(self, mix, reference, valid_len, aux, pad_len):
+        # Gradients only. The all-reduce inside apply_gradients cannot run in
+        # this compiled function while it is called from strategy.run.
+        replicas = tf.cast(self.strategy.num_replicas_in_sync, tf.float32)
+        with tf.GradientTape() as tape:
+            loss, sisdr = self.compute_loss(
+                mix, reference, valid_len, aux, pad_len, training=True
+            )
+            # MirroredStrategy sums gradients. Divide so that sum matches
+            # the mean over the global batch.
+            scaled = loss / replicas
+        gradients = tape.gradient(scaled, self.model.trainable_variables)
+        return scaled, sisdr, gradients
+
+    def _eval_replica(self, mix, reference, valid_len, aux, pad_len):
+        replicas = tf.cast(self.strategy.num_replicas_in_sync, tf.float32)
+        loss, sisdr = self.compute_loss(
+            mix, reference, valid_len, aux, pad_len, training=False
+        )
+        return loss / replicas, sisdr
+
     def train_step(self, batch):
         return self._distributed_train(*self._batch_tensors(batch))
 
     @tf.function
-    def _distributed_train(self, mix, reference, valid_len, aux, aux_len):
-        replicas = tf.cast(self.strategy.num_replicas_in_sync, tf.float32)
-
-        def step_fn(mix, reference, valid_len, aux, aux_len):
-            with tf.GradientTape() as tape:
-                loss, sisdr = self.compute_loss(
-                    mix, reference, valid_len, aux, aux_len, training=True
-                )
-                # MirroredStrategy sums gradients. Divide so that sum matches
-                # the mean over the global batch.
-                scaled = loss / replicas
-            gradients = tape.gradient(scaled, self.model.trainable_variables)
-            self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+    def _distributed_train(self, mix, reference, valid_len, aux, pad_len):
+        def step_fn(mix, reference, valid_len, aux, pad_len):
+            mix, reference, valid_len, aux = self._replica_batch(
+                mix, reference, valid_len, aux
+            )
+            scaled, sisdr, gradients = self._xla_train(
+                mix, reference, valid_len, aux, pad_len
+            )
+            self.optimizer.apply_gradients(
+                zip(gradients, self.model.trainable_variables)
+            )
             return scaled, sisdr
 
         per_loss, per_sisdr = self.strategy.run(
-            step_fn, args=(mix, reference, valid_len, aux, aux_len)
+            step_fn, args=(mix, reference, valid_len, aux, pad_len)
         )
         return self._reduce_step(per_loss, per_sisdr)
 
@@ -226,17 +237,15 @@ class SiSnrTrainer(object):
         return self._distributed_eval(*self._batch_tensors(batch))
 
     @tf.function
-    def _distributed_eval(self, mix, reference, valid_len, aux, aux_len):
-        replicas = tf.cast(self.strategy.num_replicas_in_sync, tf.float32)
-
-        def step_fn(mix, reference, valid_len, aux, aux_len):
-            loss, sisdr = self.compute_loss(
-                mix, reference, valid_len, aux, aux_len, training=False
+    def _distributed_eval(self, mix, reference, valid_len, aux, pad_len):
+        def step_fn(mix, reference, valid_len, aux, pad_len):
+            mix, reference, valid_len, aux = self._replica_batch(
+                mix, reference, valid_len, aux
             )
-            return loss / replicas, sisdr
+            return self._xla_eval(mix, reference, valid_len, aux, pad_len)
 
         per_loss, per_sisdr = self.strategy.run(
-            step_fn, args=(mix, reference, valid_len, aux, aux_len)
+            step_fn, args=(mix, reference, valid_len, aux, pad_len)
         )
         return self._reduce_step(per_loss, per_sisdr)
 
@@ -307,16 +316,17 @@ class SiSnrTrainer(object):
             self.optimizer.learning_rate = value
 
     def _decay_learning_rate(self):
-        # StepLR(step_size=2, gamma=0.98) while epoch <= 100, else every epoch * 0.9.
+        # First 100 epochs: x0.98 every 2 epochs. Epochs 101-120: x0.9 every epoch.
         if self.cur_epoch <= 100 and self.cur_epoch % 2 != 0:
             return
         gamma = 0.98 if self.cur_epoch <= 100 else 0.9
         self._set_learning_rate(self._learning_rate() * gamma)
 
-    def run(self, train_loader, dev_loader, num_epochs=200):
+    def run(self, train_loader, dev_loader, num_epochs=120):
         print(
             f"SiSnrTrainer: lr={self._learning_rate():.3e}, "
-            f"weight_decay={float(adam_kwargs['weight_decay']):.1e}, clipnorm=1",
+            f"weight_decay={float(adam_kwargs['weight_decay']):.1e}, clipnorm=1, "
+            f"XLA jit_compile=True, policy={tf.keras.mixed_precision.global_policy().name}",
             flush=True,
         )
         dev = self._run_epoch(dev_loader, training=False)

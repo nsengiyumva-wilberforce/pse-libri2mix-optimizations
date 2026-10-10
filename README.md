@@ -16,7 +16,7 @@ data/{train,dev,test}/ref.scp         # target
 
 ## Train and evaluate
 
-Training uses the full enrollment utterance. The cue is early fusion: frame similarity mixed with the enrollment mean, concatenated onto the mixture. The default schedule is 200 epochs. Adam starts at `5e-4`. Each GPU holds 16 clips, so one GPU trains at batch 16 and three GPUs train at batch 48.
+Training uses the full enrollment utterance. The cue is early fusion: frame similarity mixed with the enrollment mean, concatenated onto the mixture. The default schedule is 120 epochs. Adam starts at `5e-4`. Each GPU holds 16 clips, so one GPU trains at batch 16 and three GPUs train at batch 48.
 
 ```bash
 ./scripts/speaker_dilution.sh
@@ -32,7 +32,9 @@ BATCH=8 ./scripts/speaker_dilution.sh
 python train.py
 ```
 
-`LOSS` defaults to `si-sdr`. `EPOCHS` defaults to 200. `gpus` only prints which cards are free. Training takes the first 3 free cards, or the single free card on a one-GPU machine. A card counts as free when it has no compute process and is using under `GPU_FREE_MIB` MiB (default 4096). The script also prefers the host `libcuda` over the CUDA compat library, which these 4090s reject when it is newer than driver 535.
+Evaluation runs each test file through the network once, the whole mixture and the whole enrollment together.
+
+`LOSS` defaults to `si-sdr`. `EPOCHS` defaults to 120. `gpus` only prints which cards are free. Training takes the first 3 free cards, or the single free card on a one-GPU machine. A card counts as free when it has no compute process and is using under `GPU_FREE_MIB` MiB (default 4096). The script also prefers the host `libcuda` over the CUDA compat library, which these 4090s reject when it is newer than driver 535.
 
 ## Checkpoints
 

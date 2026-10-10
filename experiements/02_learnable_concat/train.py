@@ -1,3 +1,7 @@
+"""Experiment: 02 learnable alpha on the mixture and one minus alpha on the guided map.
+
+This file is a full training script. It does not import another experiment.
+"""
 import argparse
 import base64
 import os
@@ -7,6 +11,10 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
 import sys
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+os.chdir(_REPO_ROOT)
 import time
 import logging
 import numpy as np
@@ -163,11 +171,8 @@ PER_GPU_BATCH = args.batch
 
 
 def _checkpoint_filename(loss_tag):
-    return (
-        "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_"
-        + loss_tag
-        + "_full_utterance_drc_align_f50_bnifi_dcat_asff_eca_inject_early.keras"
-    )
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, "model_weights_02_learnable_concat_" + loss_tag + ".keras")
 
 
 #--------------------------------
@@ -368,7 +373,8 @@ def configure_libri_speech_dataset(
 
 
 print("Reference mode: full auxiliary utterance")
-print("Injection: early fusion, guided STFT concatenated at the input")
+print("Injection: early fusion, alpha * mixture + (1 - alpha) * guided map")
+print("Experiment: 02 learnable alpha on the mixture and one minus alpha on the guided map")
 print(
     f"Frontend: {frame_length}-point sqrt-Hann, hop {frame_step}, "
     f"chunk {CHUNK_SIZE}, stride {STRIDE}, no peak norm"
@@ -864,6 +870,34 @@ class ASFFFusion(Layer):
         config.update({"compress": self.compress, "prefer_left": self.prefer_left})
         return config
 
+
+class LearnableAlphaMix(Layer):
+    """Mix two maps that already share time, frequency, and channels.
+
+    output = sigmoid(alpha) * mixture + (1 - sigmoid(alpha)) * guided.
+    alpha is one scalar. It starts at 0, so the mix starts equal.
+    """
+
+    def build(self, input_shape):
+        self.alpha = self.add_weight(
+            name="alpha",
+            shape=(),
+            initializer="zeros",
+            trainable=True,
+        )
+        super().build(input_shape)
+
+    def call(self, inputs):
+        mixture, guided = inputs
+        alpha = tf.nn.sigmoid(self.alpha)
+        mixed = alpha * mixture + (1.0 - alpha) * guided
+        mixed.set_shape(mixture.shape)
+        return mixed
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
+
+
 class STFTFrameSimilarity(Layer):
     """SEF-PNet similarity: guidance = E @ softmax(E^T @ Y), per real and imag.
 
@@ -968,7 +1002,7 @@ def custom_unet(
     num_layers=4,
     max_ref_frames=1280,
 ):
-    """Early fusion: concatenate the guided enrollment STFT onto the mixture."""
+    """Early fusion: alpha * mixture + (1 - alpha) * guided enrollment map."""
     upsample = upsample_conv
     main_input = Input(input_shape, name="noisy_main")
     ref_input = Input((max_ref_frames, input_shape[1], input_shape[2]), name="noisy_ref")
@@ -986,7 +1020,7 @@ def custom_unet(
         guided = Reshape((time_bins, freq_bins, 2), name="stft_guided")(sim_and_mean[..., 0:2])
         enroll_mean = Reshape((time_bins, freq_bins, 2), name="stft_mean")(sim_and_mean[..., 2:4])
     guided = ASFFFusion(name="stft_asff")([guided, enroll_mean])
-    x = Concatenate(axis=-1, name="stft_fuse")([x, guided])
+    x = LearnableAlphaMix(name="stft_fuse")([x, guided])
     mixture_map = x
 
     # Four stride-2 pools need both axes divisible by 16. The 8 ms hop does not
@@ -1670,7 +1704,7 @@ def main():
     print(f"STOIi:        {np.nanmean(arr[:,9].astype(float)):.3f}")
 
     # -------- Save CSV --------
-    with open("evaluation_results_full.csv", "w", newline="") as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results_full.csv"), "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
             [
@@ -1688,7 +1722,7 @@ def main():
         )
         writer.writerows(results)
 
-    print("\nSaved results to evaluation_results_full.csv")
+    print("\nSaved results to", os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results_full.csv"))
 
 
 # ==========================================================

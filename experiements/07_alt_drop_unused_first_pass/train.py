@@ -1,3 +1,7 @@
+"""Experiment: 07 alternating block without the unused first 3x3 and 5x5 pair.
+
+This file is a full training script. It does not import another experiment.
+"""
 import argparse
 import base64
 import os
@@ -7,6 +11,10 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
 import sys
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+os.chdir(_REPO_ROOT)
 import time
 import logging
 import numpy as np
@@ -163,11 +171,8 @@ PER_GPU_BATCH = args.batch
 
 
 def _checkpoint_filename(loss_tag):
-    return (
-        "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_"
-        + loss_tag
-        + "_full_utterance_drc_align_f50_bnifi_dcat_asff_eca_inject_early.keras"
-    )
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, "model_weights_07_alt_drop_unused_first_pass_" + loss_tag + ".keras")
 
 
 #--------------------------------
@@ -369,6 +374,7 @@ def configure_libri_speech_dataset(
 
 print("Reference mode: full auxiliary utterance")
 print("Injection: early fusion, guided STFT concatenated at the input")
+print("Experiment: 07 alternating block without the unused first 3x3 and 5x5 pair")
 print(
     f"Frontend: {frame_length}-point sqrt-Hann, hop {frame_step}, "
     f"chunk {CHUNK_SIZE}, stride {STRIDE}, no peak norm"
@@ -723,69 +729,44 @@ class PowerLawComplexSpec(Layer):
 
 
 def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
+    """The first 3x3/5x5 pair is removed. Only the pair that reaches the output remains."""
     orginal_x = x
-    # ---- Frequency branch (1 x 3) for the first branch, we get time convolutions over frequency
-    f_branch = Conv2D(filters, (3, 3), padding="same",
-                      kernel_initializer="he_normal",
-                      name=f"{name_prefix}_fconv")(x)
-    if use_bn:
-        f_branch  = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
-    f_branch = Activation(activation)(f_branch )
-
-    # ---- Time branch (3 x 1) ----
-    t_branch = Conv2D(filters, (5,5), padding="same",
-                      kernel_initializer="he_normal",
-                      name=f"{name_prefix}_tconv")(x)
-    if use_bn:
-        t_branch  = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
-    t_branch = Activation(activation)(t_branch )
-
-    # ---- Merge ----
-    x = Concatenate(name=f"{name_prefix}_concat")([f_branch, t_branch])
-
-    # sencond branch, we get frequency convolutions over time
     t_branch_2 = Conv2D(filters, (5, 5), padding="same",
                         kernel_initializer="he_normal",
                         name=f"{name_prefix}_tconv2")(orginal_x)
     if use_bn:
-        t_branch_2  = BatchNormalization(name=f"{name_prefix}_tbn2")(t_branch_2)
-    t_branch_2  = Activation(activation)(t_branch_2)
+        t_branch_2 = BatchNormalization(name=f"{name_prefix}_tbn2")(t_branch_2)
+    t_branch_2 = Activation(activation)(t_branch_2)
 
     f_branch_2 = Conv2D(filters, (3, 3), padding="same",
                         kernel_initializer="he_normal",
                         name=f"{name_prefix}_fconv2")(orginal_x)
     if use_bn:
-        f_branch_2  = BatchNormalization(name=f"{name_prefix}_fbn2")(f_branch_2)
+        f_branch_2 = BatchNormalization(name=f"{name_prefix}_fbn2")(f_branch_2)
     f_branch_2 = Activation(activation)(f_branch_2)
 
-    # Merge again
     x = Concatenate(name=f"{name_prefix}_concat2")([t_branch_2, f_branch_2])
-    # merge the two branches  for x and original_x
     x = Concatenate(name=f"{name_prefix}_final_concat")([x, orginal_x])
 
-    # ---- Separable TF mixing ----
-    x = DepthwiseConv2D((3,3), padding="same",
+    x = DepthwiseConv2D((3, 3), padding="same",
                         depthwise_initializer="he_normal",
                         name=f"{name_prefix}_dw")(x)
-
     x = Conv2D(filters, 1, padding="same",
                kernel_initializer="he_normal",
                name=f"{name_prefix}_pw")(x)
-
     if use_bn:
         x = BatchNormalization(name=f"{name_prefix}_pw_bn")(x)
-
     x = Activation(activation)(x)
 
-    # ---- Joint TF modeling ----
     x = Conv2D(filters, (3, 3), padding="same",
                kernel_initializer="he_normal",
                name=f"{name_prefix}_joint")(x)
     if use_bn:
         x = BatchNormalization(name=f"{name_prefix}_jbn")(x)
     x = Activation(activation)(x)
-
     return x
+
+
 def eca_kernel_size(channels, gamma=2, b=1):
     """Odd 1D kernel from ECA-Net: k = |log2(C)/gamma + b/gamma|, forced odd."""
     t = int(abs((math.log2(max(int(channels), 1)) + b) / gamma))
@@ -1670,7 +1651,7 @@ def main():
     print(f"STOIi:        {np.nanmean(arr[:,9].astype(float)):.3f}")
 
     # -------- Save CSV --------
-    with open("evaluation_results_full.csv", "w", newline="") as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results_full.csv"), "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
             [
@@ -1688,7 +1669,7 @@ def main():
         )
         writer.writerows(results)
 
-    print("\nSaved results to evaluation_results_full.csv")
+    print("\nSaved results to", os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results_full.csv"))
 
 
 # ==========================================================

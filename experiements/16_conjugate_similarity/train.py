@@ -1,3 +1,7 @@
+"""Experiment: 16 frame similarity with the conjugate transpose.
+
+This file is a full training script. It does not import another experiment.
+"""
 import argparse
 import base64
 import os
@@ -7,6 +11,10 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
 import sys
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+os.chdir(_REPO_ROOT)
 import time
 import logging
 import numpy as np
@@ -163,11 +171,8 @@ PER_GPU_BATCH = args.batch
 
 
 def _checkpoint_filename(loss_tag):
-    return (
-        "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_"
-        + loss_tag
-        + "_full_utterance_drc_align_f50_bnifi_dcat_asff_eca_inject_early.keras"
-    )
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, "model_weights_16_conjugate_similarity_" + loss_tag + ".keras")
 
 
 #--------------------------------
@@ -369,6 +374,7 @@ def configure_libri_speech_dataset(
 
 print("Reference mode: full auxiliary utterance")
 print("Injection: early fusion, guided STFT concatenated at the input")
+print("Experiment: 16 frame similarity with the conjugate transpose")
 print(
     f"Frontend: {frame_length}-point sqrt-Hann, hop {frame_step}, "
     f"chunk {CHUNK_SIZE}, stride {STRIDE}, no peak norm"
@@ -875,18 +881,18 @@ class STFTFrameSimilarity(Layer):
 
     def call(self, inputs):
         mix, enroll, mask = inputs
-        mix_f = tf.transpose(mix, [0, 2, 3, 1])
-        enr_f = tf.transpose(enroll, [0, 2, 3, 1])
-        guides = []
-        valid = tf.cast(mask, mix.dtype)
-        for channel in range(2):
-            enrollment = enr_f[:, :, channel, :]
-            mixture = mix_f[:, :, channel, :]
-            logits = tf.matmul(enrollment, mixture, transpose_a=True)
-            logits = logits + (valid[:, :, None] - 1.0) * 1e9
-            weights = tf.nn.softmax(logits, axis=1)
-            guides.append(tf.matmul(enrollment, weights))
-        guided = tf.transpose(tf.stack(guides, axis=-1), [0, 2, 1, 3])
+        mix_c = tf.complex(mix[..., 0], mix[..., 1])
+        enr_c = tf.complex(enroll[..., 0], enroll[..., 1])
+        mix_f = tf.transpose(mix_c, [0, 2, 1])
+        enr_f = tf.transpose(enr_c, [0, 2, 1])
+        valid = tf.cast(mask, tf.float32)
+        # Adjoint on the enrollment: E^H Y, not a real transpose of each channel.
+        logits = tf.math.real(tf.matmul(enr_f, mix_f, adjoint_a=True))
+        logits = logits + (valid[:, :, None] - 1.0) * 1e9
+        weights = tf.nn.softmax(logits, axis=1)
+        guided_f = tf.matmul(enr_f, tf.cast(weights, enr_f.dtype))
+        guided = tf.stack([tf.math.real(guided_f), tf.math.imag(guided_f)], axis=-1)
+        guided = tf.transpose(guided, [0, 2, 1, 3])
 
         valid_frames = valid[:, :, None, None]
         denom = tf.reduce_sum(valid_frames, axis=1, keepdims=True) + 1e-8
@@ -1670,7 +1676,7 @@ def main():
     print(f"STOIi:        {np.nanmean(arr[:,9].astype(float)):.3f}")
 
     # -------- Save CSV --------
-    with open("evaluation_results_full.csv", "w", newline="") as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results_full.csv"), "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
             [
@@ -1688,7 +1694,7 @@ def main():
         )
         writer.writerows(results)
 
-    print("\nSaved results to evaluation_results_full.csv")
+    print("\nSaved results to", os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results_full.csv"))
 
 
 # ==========================================================

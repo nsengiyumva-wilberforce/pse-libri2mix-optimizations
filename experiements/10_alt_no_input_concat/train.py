@@ -1,3 +1,7 @@
+"""Experiment: 10 alternating block without concatenating the block input.
+
+This file is a full training script. It does not import another experiment.
+"""
 import argparse
 import base64
 import os
@@ -7,6 +11,10 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
 import sys
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+os.chdir(_REPO_ROOT)
 import time
 import logging
 import numpy as np
@@ -163,11 +171,8 @@ PER_GPU_BATCH = args.batch
 
 
 def _checkpoint_filename(loss_tag):
-    return (
-        "model_weights_final_version_hard_convolution_baseline_LIBRIMIX_"
-        + loss_tag
-        + "_full_utterance_drc_align_f50_bnifi_dcat_asff_eca_inject_early.keras"
-    )
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, "model_weights_10_alt_no_input_concat_" + loss_tag + ".keras")
 
 
 #--------------------------------
@@ -369,6 +374,7 @@ def configure_libri_speech_dataset(
 
 print("Reference mode: full auxiliary utterance")
 print("Injection: early fusion, guided STFT concatenated at the input")
+print("Experiment: 10 alternating block without concatenating the block input")
 print(
     f"Frontend: {frame_length}-point sqrt-Hann, hop {frame_step}, "
     f"chunk {CHUNK_SIZE}, stride {STRIDE}, no peak norm"
@@ -761,7 +767,6 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
     # Merge again
     x = Concatenate(name=f"{name_prefix}_concat2")([t_branch_2, f_branch_2])
     # merge the two branches  for x and original_x
-    x = Concatenate(name=f"{name_prefix}_final_concat")([x, orginal_x])
 
     # ---- Separable TF mixing ----
     x = DepthwiseConv2D((3,3), padding="same",
@@ -1670,7 +1675,7 @@ def main():
     print(f"STOIi:        {np.nanmean(arr[:,9].astype(float)):.3f}")
 
     # -------- Save CSV --------
-    with open("evaluation_results_full.csv", "w", newline="") as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results_full.csv"), "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
             [
@@ -1688,7 +1693,7 @@ def main():
         )
         writer.writerows(results)
 
-    print("\nSaved results to evaluation_results_full.csv")
+    print("\nSaved results to", os.path.join(os.path.dirname(os.path.abspath(__file__)), "evaluation_results_full.csv"))
 
 
 # ==========================================================

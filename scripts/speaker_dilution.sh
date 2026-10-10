@@ -12,13 +12,13 @@
 # gpus prints which cards are free. A card is free when it has no compute
 # process and is under GPU_FREE_MIB MiB (default 4096). The job uses the first
 # 3 free cards, or the one free card when that is all there is. LOSS defaults
-# to si-sdr. EPOCHS defaults to 200. BATCH is clips per GPU and defaults to 16,
+# to si-sdr. EPOCHS defaults to 120. BATCH is clips per GPU and defaults to 16,
 # so one card trains at 16 and three cards train at 48.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 LOSS="${LOSS:-si-sdr}"
-EPOCHS="${EPOCHS:-200}"
+EPOCHS="${EPOCHS:-120}"
 GPU_FREE_MIB="${GPU_FREE_MIB:-4096}"
 MAX_GPUS=3
 PER_GPU_BATCH="${BATCH:-16}"
