@@ -95,6 +95,30 @@ from tensorflow.keras.layers import (
 tf.config.optimizer.set_jit(True)
 
 
+def _make_distribution_strategy():
+    """Use all visible GPUs through synchronous data parallelism."""
+    gpus = tf.config.list_physical_devices("GPU")
+    for gpu in gpus:
+        try:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as exc:
+            print(f"Could not enable memory growth on {gpu.name}: {exc}")
+    strategy = (
+        tf.distribute.MirroredStrategy()
+        if len(gpus) > 1
+        else tf.distribute.get_strategy()
+    )
+    names = ", ".join(gpu.name for gpu in gpus) if gpus else "CPU"
+    print(
+        f"Distribution: {strategy.num_replicas_in_sync} replica(s) on {names}",
+        flush=True,
+    )
+    return strategy
+
+
+strategy = _make_distribution_strategy()
+
+
 def _loss_choice(value):
     key = value.strip().lower().replace("_", "-")
     aliases = {
@@ -263,7 +287,8 @@ REF_SEGMENT_FRAMES = conv_stft_frames(REF_SEGMENT_SAMPLES, frame_length, frame_s
 # SEF-PNet power-law compression on complex spectra (Li et al., beta = 0.5).
 MAG_COMPRESS = 0.5
 
-batch_size = 32
+# One example per replica keeps full-utterance encoder activations manageable.
+batch_size = max(1, strategy.num_replicas_in_sync)
 # SEF-PNet train.sh runs 200 epochs. The step decay is defined across that span.
 EPOCHS = 200
 
@@ -1595,24 +1620,25 @@ def custom_unet(
 
 
 model_filename = _checkpoint_filename(args.l.replace("-", "_") if args.l is not None else "si_sdr")
-model = custom_unet(
-    input_shape=(N_FRAMES, N_BINS, 2),
-    use_batch_norm=True,
-    num_classes=2,
-    filters=50,
-    use_dropout_on_upsampling=False,
-    num_layers=4,
-    use_attention=False,
-    upsample_mode="deconv",
-    dropout=0.3,
-    output_activation="sigmoid",
-    full_utterance=args.full_utterance,
-    ref_chunk_frames=REF_CHUNK_FRAMES,
-    max_ref_frames=MAX_REF_FRAMES,
-    stft_interact=args.stft_interact,
-    inject=INJECT,
-    segment_frames=REF_SEGMENT_FRAMES,
-)
+with strategy.scope():
+    model = custom_unet(
+        input_shape=(N_FRAMES, N_BINS, 2),
+        use_batch_norm=True,
+        num_classes=2,
+        filters=50,
+        use_dropout_on_upsampling=False,
+        num_layers=4,
+        use_attention=False,
+        upsample_mode="deconv",
+        dropout=0.3,
+        output_activation="sigmoid",
+        full_utterance=args.full_utterance,
+        ref_chunk_frames=REF_CHUNK_FRAMES,
+        max_ref_frames=MAX_REF_FRAMES,
+        stft_interact=args.stft_interact,
+        inject=INJECT,
+        segment_frames=REF_SEGMENT_FRAMES,
+    )
 callbacks = [
     ModelCheckpoint(
         model_filename,
@@ -2280,13 +2306,15 @@ else:
     print(f"Checkpoint: {model_filename}")
     run_epochs = EPOCHS if args.epochs is None else args.epochs
     print(f"Adam lr={trainer_conf['optimizer_kwargs']['lr']}, batch {batch_size}, epochs {run_epochs}")
-    trainer = SiSnrTrainer(
-        model,
-        _AUDIO_TOOLKIT,
-        MAX_REF_FRAMES,
-        model_filename,
-        logging_period=trainer_conf["logging_period"],
-    )
+    with strategy.scope():
+        trainer = SiSnrTrainer(
+            model,
+            _AUDIO_TOOLKIT,
+            MAX_REF_FRAMES,
+            model_filename,
+            logging_period=trainer_conf["logging_period"],
+            strategy=strategy,
+        )
     trainer.run(
         make_dataloader(
             train=True, data_kwargs=train_data, chunk_size=chunk_size, batch_size=batch_size
