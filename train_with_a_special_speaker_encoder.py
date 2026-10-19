@@ -118,7 +118,7 @@ def load_from_folder(data_root, split):
 
 TARGET_SR = 8000
 total_length = 4.0
-trim_length = 32900
+trim_length = 32000
 
 # Clean power-of-two STFT settings for smaller features
 n_fft = 256             # 129 bins; Nyquist is dropped so the U-Net sees 128
