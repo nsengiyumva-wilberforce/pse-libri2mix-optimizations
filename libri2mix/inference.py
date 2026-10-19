@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import librosa
 import numpy as np
 import tensorflow as tf
 
@@ -55,7 +54,9 @@ class WaveformEnhancer:
         if ref_len < self.frame_length:
             expected_ref_frames = 1
         else:
-            expected_ref_frames = conv_stft_frames(ref_len, self.frame_length, self.frame_step)
+            expected_ref_frames = conv_stft_frames(
+                ref_len, self.frame_length, self.frame_step
+            )
         total_len = len(noisy_wav)
         if total_len == 0:
             return noisy_wav.astype(np.float32)
@@ -64,11 +65,15 @@ class WaveformEnhancer:
         window_sum = np.zeros(total_len)
         window = np.ones(chunk_len, dtype=np.float32)
 
-        ref_segments = self.sample_reference_segments_full(ref_wav, K=K, segment_len=ref_len)
+        ref_segments = self.sample_reference_segments_full(
+            ref_wav, K=K, segment_len=ref_len
+        )
         ref_specs_complex = tf.map_fn(
             lambda x: self.audio_toolkit.stft(x),
             ref_segments,
-            fn_output_signature=tf.TensorSpec(shape=[expected_ref_frames, fft_bins], dtype=tf.complex64),
+            fn_output_signature=tf.TensorSpec(
+                shape=[expected_ref_frames, fft_bins], dtype=tf.complex64
+            ),
         )
         ref_specs = complex_to_2ch(ref_specs_complex)[None, ...]
         if not np.isfinite(ref_specs.numpy()).all():
@@ -100,7 +105,9 @@ class WaveformEnhancer:
 
             valid_end = min(start + len(enhanced_chunk), total_len)
             valid_len = valid_end - start
-            enhanced_output[start:valid_end] += enhanced_chunk[:valid_len] * window[:valid_len]
+            enhanced_output[start:valid_end] += (
+                enhanced_chunk[:valid_len] * window[:valid_len]
+            )
             window_sum[start:valid_end] += window[:valid_len]
 
             if end >= total_len:
@@ -113,7 +120,9 @@ class WaveformEnhancer:
 
         return enhanced_output.astype(np.float32)
 
-    def enhance_audio_full_utterance(self, noisy_wav, ref_wav, model, overlap=0.5, max_ref_frames=1280):
+    def enhance_audio_full_utterance(
+        self, noisy_wav, ref_wav, model, overlap=0.5, max_ref_frames=1280
+    ):
         """Enhance with the whole auxiliary utterance, not sampled reference segments."""
         if isinstance(noisy_wav, np.ndarray):
             noisy_wav = tf.convert_to_tensor(noisy_wav, tf.float32)
@@ -173,7 +182,9 @@ class WaveformEnhancer:
 
             valid_end = min(start + len(enhanced_chunk), total_len)
             valid_len = valid_end - start
-            enhanced_output[start:valid_end] += enhanced_chunk[:valid_len] * window[:valid_len]
+            enhanced_output[start:valid_end] += (
+                enhanced_chunk[:valid_len] * window[:valid_len]
+            )
             window_sum[start:valid_end] += window[:valid_len]
 
             if end >= total_len:
@@ -187,7 +198,9 @@ class WaveformEnhancer:
         return enhanced_output.astype(np.float32)
 
 
-_DEFAULT_ENHANCER = WaveformEnhancer(AudioToolkit(), chunk_size=31000, frame_length=400, frame_step=160, n_fft=510)
+_DEFAULT_ENHANCER = WaveformEnhancer(
+    AudioToolkit(), chunk_size=31000, frame_length=400, frame_step=160, n_fft=510
+)
 
 sample_reference_segments_full = _DEFAULT_ENHANCER.sample_reference_segments_full
 enhance_audio_consistent = _DEFAULT_ENHANCER.enhance_audio_consistent

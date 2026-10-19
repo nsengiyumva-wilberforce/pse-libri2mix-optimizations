@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import random
 
-import numpy as np
-from audiomentations import AddGaussianNoise, Compose, Gain, PolarityInversion, Shift
 import tensorflow as tf
 
 from .audio import AudioToolkit, conv_stft_frames
@@ -18,8 +15,6 @@ class LibriSpeechDatasetBuilder:
 
     def __post_init__(self):
         pass
-
-
 
     def load_scp(self, mix_path, ref_path, tgt_path):
         def get_dict(path):
@@ -55,15 +50,15 @@ class LibriSpeechDatasetBuilder:
 
         return mix_list, ref_list, tgt_list
 
-    def load_libri_speech_triplet_multiview(self, mix_path, ref_path, tgt_path, K=4, ref_len=16600, is_train=False):
+    def load_libri_speech_triplet_multiview(
+        self, mix_path, ref_path, tgt_path, K=4, ref_len=16600, is_train=False
+    ):
         clean = self.audio_toolkit.preprocess_tf(tgt_path)
         noisy = self.audio_toolkit.preprocess_tf(mix_path)
         ref = self.audio_toolkit.preprocess_tf(ref_path)
         clean.set_shape([None])
         noisy.set_shape([None])
         ref.set_shape([None])
-
-
 
         mix_chunks, clean_chunks, valid = self.split_pair(noisy, clean, is_train)
         ref_segments = self.audio_toolkit.sample_reference_segments(ref, K, ref_len)
@@ -132,18 +127,26 @@ class LibriSpeechDatasetBuilder:
         )
         return spectrogram_corr, spectrogram_refs, spectrogram_clean
 
-    def configure_dataset(self, mixture_files, reference_files, target_files, is_train=True, K=4):
-        ds = tf.data.Dataset.from_tensor_slices((mixture_files, reference_files, target_files))
+    def configure_dataset(
+        self, mixture_files, reference_files, target_files, is_train=True, K=4
+    ):
+        ds = tf.data.Dataset.from_tensor_slices(
+            (mixture_files, reference_files, target_files)
+        )
         if is_train:
             ds = ds.shuffle(buffer_size=len(mixture_files))
         ds = ds.map(
-            lambda n, r, t: self.load_libri_speech_triplet_multiview(n, r, t, K, is_train=is_train),
+            lambda n, r, t: self.load_libri_speech_triplet_multiview(
+                n, r, t, K, is_train=is_train
+            ),
             num_parallel_calls=tf.data.AUTOTUNE,
         )
         ds = ds.interleave(
-            lambda mix_chunks, ref_segments, clean_chunks, valid: tf.data.Dataset.from_tensor_slices(
-                (mix_chunks, clean_chunks, valid)
-            ).map(lambda m, c, v: (m, ref_segments, c, v)),
+            lambda mix_chunks, ref_segments, clean_chunks, valid: (
+                tf.data.Dataset.from_tensor_slices(
+                    (mix_chunks, clean_chunks, valid)
+                ).map(lambda m, c, v: (m, ref_segments, c, v))
+            ),
             num_parallel_calls=tf.data.AUTOTUNE,
         )
         if is_train:
@@ -161,7 +164,9 @@ class LibriSpeechDatasetBuilder:
                     "noisy_main": self.audio_toolkit.complex_to_2ch(spec_noisy),
                     "noisy_ref": self.audio_toolkit.complex_to_2ch(spec_refs),
                 },
-                self._with_valid_channel(self.audio_toolkit.complex_to_2ch(spec_clean), valid),
+                self._with_valid_channel(
+                    self.audio_toolkit.complex_to_2ch(spec_clean), valid
+                ),
             ),
             num_parallel_calls=tf.data.AUTOTUNE,
         )
@@ -184,10 +189,17 @@ class LibriSpeechDatasetBuilder:
         return mix_chunks, ref_spec, ref_mask, clean_chunks, valid
 
     def configure_dataset_full_utterance(
-        self, mixture_files, reference_files, target_files, is_train=True, max_ref_frames=1280
+        self,
+        mixture_files,
+        reference_files,
+        target_files,
+        is_train=True,
+        max_ref_frames=1280,
     ):
         """Same mixture chunking as ``configure_dataset``, but each auxiliary file is kept whole."""
-        ds = tf.data.Dataset.from_tensor_slices((mixture_files, reference_files, target_files))
+        ds = tf.data.Dataset.from_tensor_slices(
+            (mixture_files, reference_files, target_files)
+        )
         if is_train:
             ds = ds.shuffle(buffer_size=len(mixture_files))
         ds = ds.map(
@@ -197,9 +209,11 @@ class LibriSpeechDatasetBuilder:
             num_parallel_calls=tf.data.AUTOTUNE,
         )
         ds = ds.interleave(
-            lambda mix_chunks, ref_spec, ref_mask, clean_chunks, valid: tf.data.Dataset.from_tensor_slices(
-                (mix_chunks, clean_chunks, valid)
-            ).map(lambda m, c, v: (m, ref_spec, ref_mask, c, v)),
+            lambda mix_chunks, ref_spec, ref_mask, clean_chunks, valid: (
+                tf.data.Dataset.from_tensor_slices(
+                    (mix_chunks, clean_chunks, valid)
+                ).map(lambda m, c, v: (m, ref_spec, ref_mask, c, v))
+            ),
             num_parallel_calls=tf.data.AUTOTUNE,
         )
         if is_train:
@@ -221,18 +235,23 @@ class LibriSpeechDatasetBuilder:
             ref_mask.set_shape([max_ref_frames])
             noisy_main = self.audio_toolkit.complex_to_2ch(spec_noisy)
             noisy_ref = self.audio_toolkit.complex_to_2ch(ref_spec)
-            clean_2ch = self._with_valid_channel(self.audio_toolkit.complex_to_2ch(spec_clean), valid)
+            clean_2ch = self._with_valid_channel(
+                self.audio_toolkit.complex_to_2ch(spec_clean), valid
+            )
             noisy_main.set_shape([n_main, n_bins, 2])
             noisy_ref.set_shape([max_ref_frames, n_bins, 2])
             clean_2ch.set_shape([n_main, n_bins, 3])
             return (
-                {"noisy_main": noisy_main, "noisy_ref": noisy_ref, "ref_mask": ref_mask},
+                {
+                    "noisy_main": noisy_main,
+                    "noisy_ref": noisy_ref,
+                    "ref_mask": ref_mask,
+                },
                 clean_2ch,
             )
 
         ds = ds.map(to_example, num_parallel_calls=tf.data.AUTOTUNE)
         return ds.prefetch(tf.data.AUTOTUNE)
-
 
 
 def load_scp(mix_path, ref_path, tgt_path):

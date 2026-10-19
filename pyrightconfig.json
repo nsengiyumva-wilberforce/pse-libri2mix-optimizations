@@ -1,0 +1,15 @@
+{
+  "venvPath": "..",
+  "venv": "se",
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": true,
+  "reportMissingModuleSource": false,
+  "reportUnusedImport": true,
+  "reportUnusedVariable": "none",
+  "reportDuplicateImport": true,
+  "reportAttributeAccessIssue": "none",
+  "reportArgumentType": "none",
+  "reportCallIssue": "none",
+  "reportOptionalMemberAccess": "none"
+}

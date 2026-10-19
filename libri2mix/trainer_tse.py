@@ -53,7 +53,9 @@ def _sisnr(estimate, reference, eps=1e-8):
 
 def _mask_by_length(waveforms, lengths):
     positions = tf.range(tf.shape(waveforms)[-1])
-    mask = tf.cast(positions[None, :] < tf.cast(lengths, tf.int32)[:, None], waveforms.dtype)
+    mask = tf.cast(
+        positions[None, :] < tf.cast(lengths, tf.int32)[:, None], waveforms.dtype
+    )
     return waveforms * mask
 
 
@@ -121,7 +123,7 @@ def _spec_augment_enrollment(spec, valid):
     return spec * tf.cast(keep[..., None], spec.dtype)
 
 
-class SiSnrTrainer(object):
+class SiSnrTrainer:
     def __init__(
         self,
         model,
@@ -160,7 +162,9 @@ class SiSnrTrainer(object):
         mix_spec = self.toolkit.stft(mix)
         predicted = self.model(
             {
-                "noisy_main": tf.stack([tf.math.real(mix_spec), tf.math.imag(mix_spec)], axis=-1),
+                "noisy_main": tf.stack(
+                    [tf.math.real(mix_spec), tf.math.imag(mix_spec)], axis=-1
+                ),
                 "noisy_ref": aux_spec,
                 "ref_mask": aux_mask,
             },
@@ -184,7 +188,9 @@ class SiSnrTrainer(object):
     def _replica_batch(self, mix, reference, valid_len, aux, aux_len):
         """Each replica keeps an equal slice of the global batch."""
         ctx = tf.distribute.get_replica_context()
-        n = 1 if ctx is None else ctx.num_replicas_in_sync
+        if ctx is None:
+            return mix, reference, valid_len, aux, aux_len
+        n = ctx.num_replicas_in_sync
         if n == 1:
             return mix, reference, valid_len, aux, aux_len
         per = tf.shape(mix)[0] // n
@@ -199,7 +205,9 @@ class SiSnrTrainer(object):
         )
 
     def compute_loss(self, mix, reference, valid_len, aux, aux_len, training):
-        aux_spec, aux_mask = _enrollment_batch(self.toolkit, aux, aux_len, self.max_ref_frames)
+        aux_spec, aux_mask = _enrollment_batch(
+            self.toolkit, aux, aux_len, self.max_ref_frames
+        )
         if training:
             aux_spec = _spec_augment_enrollment(aux_spec, aux_mask)
         estimate, target = self._waveforms(mix, reference, aux_spec, aux_mask, training)
@@ -228,7 +236,9 @@ class SiSnrTrainer(object):
             raise ValueError(
                 f"enrollment is {int(aux.shape[1])} samples, longer than {width}"
             )
-        aux = tf.pad(aux, [[0, 0], [0, tf.maximum(width - tf.shape(aux)[1], 0)]])[:, :width]
+        aux = tf.pad(aux, [[0, 0], [0, tf.maximum(width - tf.shape(aux)[1], 0)]])[
+            :, :width
+        ]
         aux.set_shape([None, width])
         return aux
 
@@ -303,16 +313,21 @@ class SiSnrTrainer(object):
         started = time.time()
         step = self.train_step if training else self.eval_step
         phase = "train" if training else "dev"
-        print(f"{phase}: loading the first batch, then compiling the first step...", flush=True)
+        print(
+            f"{phase}: loading the first batch, then compiling the first step...",
+            flush=True,
+        )
         # The loader reads whole enrollment wavs on the CPU. Fill the next
         # batch while the GPU runs this one, instead of waiting out the read.
         batches = queue.Queue(maxsize=4)
+
         def produce():
             try:
                 for batch in loader:
                     batches.put(batch)
             finally:
                 batches.put(None)
+
         producer = threading.Thread(target=produce, daemon=True)
         producer.start()
         batch_index = 0
@@ -344,7 +359,12 @@ class SiSnrTrainer(object):
         mean_loss = sum(losses) / len(losses)
         mean_sisdr = sum(sisdrs) / len(sisdrs)
         minutes = (time.time() - started) / 60.0
-        return {"loss": mean_loss, "sisdr": mean_sisdr, "batches": len(losses), "cost": minutes}
+        return {
+            "loss": mean_loss,
+            "sisdr": mean_sisdr,
+            "batches": len(losses),
+            "cost": minutes,
+        }
 
     def _learning_rate(self):
         value = self.optimizer.learning_rate
@@ -435,7 +455,9 @@ def _save_model(model, path):
     original = keras_backend.convert_to_numpy
 
     def convert_to_numpy(value):
-        if isinstance(value, tf.distribute.DistributedValues) or hasattr(value, "numpy"):
+        if isinstance(value, tf.distribute.DistributedValues) or hasattr(
+            value, "numpy"
+        ):
             return _host_array(value)
         return original(value)
 

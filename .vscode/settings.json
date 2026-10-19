@@ -1,0 +1,21 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/../se/bin/python",
+  "python.analysis.diagnosticMode": "workspace",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.venvPath": "${workspaceFolder}/..",
+  "python.analysis.venv": "se",
+  "python.analysis.reportDuplicateImport": true,
+  "python.analysis.reportUnusedImport": true,
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportCallIssue": "none",
+    "reportAttributeAccessIssue": "none",
+    "reportArgumentType": "none",
+    "reportUnusedParameter": "none",
+    "reportUnusedVariable": "none",
+    "reportShadowedInFunction": "none"
+  },
+  "pylint.args": [
+    "--extension-pkg-allow-list=tensorflow,keras,tensorflow_io"
+  ],
+  "pylint.importStrategy": "fromEnvironment"
+}

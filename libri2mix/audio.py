@@ -58,7 +58,11 @@ class AudioToolkit:
         if isinstance(path, bytes):
             path = path.decode("utf-8")
         elif isinstance(path, np.ndarray):
-            path = path.item().decode("utf-8") if path.dtype.type is np.bytes_ else path.item()
+            path = (
+                path.item().decode("utf-8")
+                if path.dtype.type is np.bytes_
+                else path.item()
+            )
         audio, sr = sf.read(path)
         audio = audio.astype("float32")
         if audio.ndim > 1:
@@ -77,10 +81,14 @@ class AudioToolkit:
         squeezed = wav.shape.rank == 1
         if squeezed:
             wav = wav[None, :]
-        filters, _, _ = _conv_stft_filters(self.frame_length, self.frame_step, self.n_fft)
+        filters, _, _ = _conv_stft_filters(
+            self.frame_length, self.frame_step, self.n_fft
+        )
         pad = self.frame_length - self.frame_step
         wav = tf.pad(wav, [[0, 0], [pad, pad]])[:, :, None]
-        transformed = tf.nn.conv1d(wav, filters, stride=self.frame_step, padding="VALID")
+        transformed = tf.nn.conv1d(
+            wav, filters, stride=self.frame_step, padding="VALID"
+        )
         n_freq = self.n_fft // 2 + 1
         spectrum = tf.complex(transformed[:, :, :n_freq], transformed[:, :, n_freq:])
         if squeezed:
@@ -92,7 +100,9 @@ class AudioToolkit:
         squeezed = spectrum.shape.rank == 2
         if squeezed:
             spectrum = spectrum[None, ...]
-        _, filters, window = _conv_stft_filters(self.frame_length, self.frame_step, self.n_fft)
+        _, filters, window = _conv_stft_filters(
+            self.frame_length, self.frame_step, self.n_fft
+        )
         packed = tf.concat([tf.math.real(spectrum), tf.math.imag(spectrum)], axis=-1)
         frames = tf.shape(packed)[1]
         win = self.frame_length
@@ -148,7 +158,9 @@ class AudioToolkit:
             return wav[s : s + chunk_size]
 
         chunks = tf.map_fn(get_chunk, starts, fn_output_signature=tf.float32)
-        tf.debugging.assert_greater(tf.shape(chunks)[0], 0, message="chunking produced no chunks")
+        tf.debugging.assert_greater(
+            tf.shape(chunks)[0], 0, message="chunking produced no chunks"
+        )
         return chunks
 
     @tf.function
@@ -181,7 +193,11 @@ class AudioToolkit:
         def sample():
             max_start = wav_len - segment_len
             starts = tf.random.uniform([K], 0, max_start + 1, dtype=tf.int32)
-            return tf.map_fn(lambda s: wav[s : s + segment_len], starts, fn_output_signature=tf.float32)
+            return tf.map_fn(
+                lambda s: wav[s : s + segment_len],
+                starts,
+                fn_output_signature=tf.float32,
+            )
 
         return tf.cond(wav_len < segment_len, pad, sample)
 

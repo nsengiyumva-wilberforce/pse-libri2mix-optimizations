@@ -14,7 +14,9 @@ def _parse_scripts(scp_path):
         for line_number, raw_line in enumerate(handle, start=1):
             tokens = raw_line.strip().split()
             if len(tokens) != 2:
-                raise RuntimeError(f"format error in {scp_path}:{line_number}: {raw_line!r}")
+                raise RuntimeError(
+                    f"format error in {scp_path}:{line_number}: {raw_line!r}"
+                )
             key, value = tokens
             if key in scp:
                 raise ValueError(f"duplicated key {key!r} in {scp_path}")
@@ -22,7 +24,7 @@ def _parse_scripts(scp_path):
     return scp
 
 
-class WaveReader(object):
+class WaveReader:
     def __init__(self, wav_scp, sample_rate=None):
         self.index_dict = _parse_scripts(wav_scp)
         self.index_keys = list(self.index_dict.keys())
@@ -38,7 +40,9 @@ class WaveReader(object):
         if self.sample_rate is not None and rate != self.sample_rate:
             import librosa
 
-            samples = librosa.resample(samples, orig_sr=rate, target_sr=self.sample_rate)
+            samples = librosa.resample(
+                samples, orig_sr=rate, target_sr=self.sample_rate
+            )
             samples = np.asarray(samples, dtype=np.float32)
         return samples
 

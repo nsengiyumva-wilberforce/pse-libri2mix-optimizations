@@ -1,41 +1,51 @@
 import argparse
 import base64
+import csv
+import math
 import os
+import warnings
 import zlib
 
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, message=".*unable to load libtensorflow_io_plugins.so.*")
-warnings.filterwarnings("ignore", category=UserWarning, message=".*file system plugins are not loaded.*")
-import sys
-import time
-import logging
 import numpy as np
 import tensorflow as tf
-from tqdm import tqdm
-from pesq import pesq
-from pystoi import stoi
+import tensorflow_io as tfio
+from keras import constraints, initializers, layers, ops, saving
+from keras.callbacks import ModelCheckpoint
+from keras.layers import (
+    RNN,
+    Activation,
+    Add,
+    AveragePooling2D,
+    BatchNormalization,
+    Concatenate,
+    Conv2D,
+    Conv2DTranspose,
+    Cropping2D,
+    Dense,
+    DepthwiseConv2D,
+    Dropout,
+    GlobalAveragePooling2D,
+    Input,
+    Layer,
+    LayerNormalization,
+    MaxPooling2D,
+    MultiHeadAttention,
+    Multiply,
+    RepeatVector,
+    Reshape,
+    Resizing,
+    SpatialDropout2D,
+    TimeDistributed,
+    UpSampling2D,
+    ZeroPadding2D,
+    add,
+    concatenate,
+    multiply,
+)
+from keras.models import Model
 from pystoi.utils import thirdoct
-import csv
+from tqdm import tqdm
 
-import warnings
-warnings.filterwarnings("ignore")
-import pandas as pd
-import numpy as np
-import onnxruntime as ort
-import sys
-import librosa
-import matplotlib.pyplot as plt
-from IPython.display import Audio, display, HTML
-from pesq import pesq, NoUtterancesError
-from pystoi import stoi
-import tensorflow as tf
-from tensorflow.keras import layers
-from tensorflow.keras.models import Model
-import tensorflow_io as tfio
-import keras
-from keras import ops
-from keras.models import Sequential
-import tensorflow_io as tfio
 from libri2mix import AudioToolkit, LibriSpeechDatasetBuilder, WaveformEnhancer
 from libri2mix.audio import conv_stft_frames
 from libri2mix.metrics import (
@@ -45,52 +55,16 @@ from libri2mix.metrics import (
     sanitize as _sanitize,
     stoi_score as _stoi_score,
 )
-from collections import defaultdict
-import warnings
-from glob import glob
-import math
-import time
-import random
-import soundfile as sf
-from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from tqdm import tqdm
-import soundfile as sf
-from tensorflow.keras.layers import (
-    BatchNormalization,
-    AveragePooling2D,
-    Conv2D,
-    MaxPooling2D,
-    Conv2DTranspose,
-    Cropping2D,
-    Dropout,
-    Lambda,
-    SpatialDropout2D,
-    LayerNormalization,
-    UpSampling2D,
-    ZeroPadding2D,
-    RNN,
-    DepthwiseConv2D,
-    Add,
-    Multiply,
-    Bidirectional,
-    TimeDistributed,
-    concatenate,
-    RepeatVector,
-    Input,
-    Layer,
-    GlobalAveragePooling1D,
-    Reshape,
-    MultiHeadAttention,
-    GRU,
-    Dense,
-    GlobalAveragePooling2D,
-    Resizing,
-    Concatenate,
-    multiply,
-    add,
-    Activation,
-    Rescaling,
+
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=".*unable to load libtensorflow_io_plugins.so.*",
 )
+warnings.filterwarnings(
+    "ignore", category=UserWarning, message=".*file system plugins are not loaded.*"
+)
+warnings.filterwarnings("ignore")
 
 tf.config.optimizer.set_jit(True)
 
@@ -134,9 +108,7 @@ def _loss_choice(value):
     }
     if key not in aliases:
         raise argparse.ArgumentTypeError(
-            "unknown loss {!r}. Choose from: time-mse, stsa-mse, stoi, estoi, si-sdr, pmsqe".format(
-                value
-            )
+            f"unknown loss {value!r}. Choose from: time-mse, stsa-mse, stoi, estoi, si-sdr, pmsqe"
         )
     return aliases[key]
 
@@ -240,7 +212,7 @@ def _checkpoint_filename(loss_tag):
     return filename
 
 
-#--------------------------------
+# --------------------------------
 # HELPERS FOR DATA LOADING
 def load_scp(mix_path, ref_path, tgt_path):
     return _DATASET_BUILDER.load_scp(mix_path, ref_path, tgt_path)
@@ -426,7 +398,12 @@ def load_libri_speech_triplet_multiview(
 
 
 def configure_libri_speech_dataset(
-    mixture_files, reference_files, target_files, is_train=True, K=4, full_utterance=False
+    mixture_files,
+    reference_files,
+    target_files,
+    is_train=True,
+    K=4,
+    full_utterance=False,
 ):
     if full_utterance:
         return _DATASET_BUILDER.configure_dataset_full_utterance(
@@ -469,7 +446,7 @@ class sLSTMCell(Layer):
         """
         sLSTM cell with proper state handling.
         """
-        super(sLSTMCell, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.units = units
         self.forget_gate_type = forget_gate_type
 
@@ -588,7 +565,7 @@ class sLSTMCell(Layer):
 # ============ mLSTM CELL implementation ============
 class mLSTMCell(Layer):
     def __init__(self, units, forget_gate_type="sigmoid", **kwargs):
-        super(mLSTMCell, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.units = units
         self.forget_gate_type = forget_gate_type
 
@@ -648,7 +625,7 @@ class mLSTMCell(Layer):
         self.built = True
 
     def call(self, inputs, states):
-        h_prev, C_flat_prev, n_prev, m_prev = states
+        _h_prev, C_flat_prev, n_prev, m_prev = states
         batch_size = tf.shape(inputs)[0]
 
         # Reshape C matrix
@@ -720,7 +697,8 @@ class mLSTMCell(Layer):
             tf.zeros((batch_size, self.units), dtype=dtype or tf.float32),  # m
         ]
 
-@tf.keras.utils.register_keras_serializable()
+
+@saving.register_keras_serializable()
 class LearnableScale(layers.Layer):
     def __init__(self, initial_value=2.0, **kwargs):
         super().__init__(**kwargs)
@@ -728,9 +706,9 @@ class LearnableScale(layers.Layer):
         self.scale = self.add_weight(
             name="scale_factor",
             shape=(),
-            initializer=tf.keras.initializers.Constant(initial_value),
+            initializer=initializers.Constant(initial_value),
             trainable=True,
-            constraint=tf.keras.constraints.NonNeg()
+            constraint=constraints.NonNeg(),
         )
 
     def call(self, x):
@@ -743,8 +721,6 @@ class LearnableScale(layers.Layer):
         return config
 
 
-
-
 def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="xlstm"):
     """
     Add xLSTM blocks with unique names using the prefix argument.
@@ -752,30 +728,29 @@ def add_xlstm_block(x, hidden_dim=256, num_layers=2, block_types=None, prefix="x
     if block_types is None:
         block_types = ["sLSTM", "mLSTM"] * ((num_layers + 1) // 2)
         block_types = block_types[:num_layers]
-    
+
     for i, block_type in enumerate(block_types):
         residual = x
-        
-        if block_type == 'sLSTM':
-            cell = sLSTMCell(hidden_dim, forget_gate_type='sigmoid')
-        elif block_type == 'mLSTM':
-            cell = mLSTMCell(hidden_dim, forget_gate_type='sigmoid')
+
+        if block_type == "sLSTM":
+            cell = sLSTMCell(hidden_dim, forget_gate_type="sigmoid")
+        elif block_type == "mLSTM":
+            cell = mLSTMCell(hidden_dim, forget_gate_type="sigmoid")
         else:
             raise ValueError(f"Unknown block type: {block_type}")
-        
+
         # Unique name using the prefix and index
-        x = RNN(cell, return_sequences=True, 
-                name=f'{prefix}_{block_type}_{i}')(x)
-        
+        x = RNN(cell, return_sequences=True, name=f"{prefix}_{block_type}_{i}")(x)
+
         if residual.shape[-1] == x.shape[-1]:
             # Names for operations like Add and LayerNorm are usually auto-generated,
             # but you can name them too if you want total safety:
-            x = Add(name=f'{prefix}_add_{i}')([residual, x])
-            x = LayerNormalization(epsilon=1e-6, name=f'{prefix}_ln_{i}')(x)
-        
+            x = Add(name=f"{prefix}_add_{i}")([residual, x])
+            x = LayerNormalization(epsilon=1e-6, name=f"{prefix}_ln_{i}")(x)
+
         if i < num_layers - 1:
-            x = Dropout(0.2, name=f'{prefix}_do_{i}')(x)
-    
+            x = Dropout(0.2, name=f"{prefix}_do_{i}")(x)
+
     return x
 
 
@@ -825,7 +800,7 @@ def attention_concat(conv_below, skip_connection):
     return concatenate([conv_below, attention_across])
 
 
-@tf.keras.utils.register_keras_serializable()
+@saving.register_keras_serializable()
 class PowerLawComplexSpec(Layer):
     """Compress or expand complex spectrogram magnitude while keeping phase.
 
@@ -940,7 +915,7 @@ def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
     speaker_embedding: (B, D)
     returns: (B, T, F, C)
     """
-    B, T, F, C = x.shape
+    _B, T, F, C = x.shape
     # Flatten spatial dims: (B, T*F, C)
     x_flat = Reshape((T * F, C))(x)
     # Speaker as query: (B, 1, D)
@@ -957,56 +932,79 @@ def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
     attn_map = Reshape((T, F, C))(attn)
     # Residual modulation
     return x + attn_map
-    
+
+
 def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix="tfb"):
-    orginal_x = x
+    original_x = x
     # ---- Frequency branch (1 x 3) for the first branch, we get time convolutions over frequency
-    f_branch = Conv2D(filters, (3, 3), padding="same",
-                      kernel_initializer="he_normal",
-                      name=f"{name_prefix}_fconv")(x)
+    f_branch = Conv2D(
+        filters,
+        (3, 3),
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_fconv",
+    )(x)
     if use_bn:
-        x = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
-    x = Activation(activation)(x)
+        f_branch = BatchNormalization(name=f"{name_prefix}_fbn")(f_branch)
+    f_branch = Activation(activation)(f_branch)
 
     # ---- Time branch (3 x 1) ----
-    t_branch = Conv2D(filters, (5,5), padding="same",
-                      kernel_initializer="he_normal",
-                      name=f"{name_prefix}_tconv")(x)
+    t_branch = Conv2D(
+        filters,
+        (5, 5),
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_tconv",
+    )(f_branch)
     if use_bn:
-        x = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
-    x = Activation(activation)(x)
+        t_branch = BatchNormalization(name=f"{name_prefix}_tbn")(t_branch)
+    t_branch = Activation(activation)(t_branch)
 
     # ---- Merge ----
-    x = Concatenate(name=f"{name_prefix}_concat")([f_branch, t_branch])
+    branch_1 = Concatenate(name=f"{name_prefix}_concat")([f_branch, t_branch])
 
     # sencond branch, we get frequency convolutions over time
-    t_branch_2 = Conv2D(filters, (5, 5), padding="same",
-                        kernel_initializer="he_normal",
-                        name=f"{name_prefix}_tconv2")(orginal_x)
+    t_branch_2 = Conv2D(
+        filters,
+        (5, 5),
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_tconv2",
+    )(original_x)
     if use_bn:
-        orginal_x = BatchNormalization(name=f"{name_prefix}_tbn2")(t_branch_2)
-    orginal_x = Activation(activation)(t_branch_2)
+        t_branch_2 = BatchNormalization(name=f"{name_prefix}_tbn2")(t_branch_2)
+    t_branch_2 = Activation(activation)(t_branch_2)
 
-    f_branch_2 = Conv2D(filters, (3, 3), padding="same",
-                        kernel_initializer="he_normal",
-                        name=f"{name_prefix}_fconv2")(orginal_x)
+    f_branch_2 = Conv2D(
+        filters,
+        (3, 3),
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_fconv2",
+    )(t_branch_2)
     if use_bn:
-        orginal_x = BatchNormalization(name=f"{name_prefix}_fbn2")(f_branch_2)
-    orginal_x = Activation(activation)(f_branch_2)
+        f_branch_2 = BatchNormalization(name=f"{name_prefix}_fbn2")(f_branch_2)
+    f_branch_2 = Activation(activation)(f_branch_2)
 
     # Merge again
-    x = Concatenate(name=f"{name_prefix}_concat2")([t_branch_2, f_branch_2])
-    # merge the two branches  for x and original_x
-    x = Concatenate(name=f"{name_prefix}_final_concat")([x, orginal_x])
+    branch_2 = Concatenate(name=f"{name_prefix}_concat2")([t_branch_2, f_branch_2])
+    x = Concatenate(name=f"{name_prefix}_final_concat")([branch_1, branch_2])
 
     # ---- Separable TF mixing ----
-    x = DepthwiseConv2D((3,3), padding="same",
-                        depthwise_initializer="he_normal",
-                        name=f"{name_prefix}_dw")(x)
+    x = DepthwiseConv2D(
+        (3, 3),
+        padding="same",
+        depthwise_initializer="he_normal",
+        name=f"{name_prefix}_dw",
+    )(x)
 
-    x = Conv2D(filters, 1, padding="same",
-               kernel_initializer="he_normal",
-               name=f"{name_prefix}_pw")(x)
+    x = Conv2D(
+        filters,
+        1,
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_pw",
+    )(x)
 
     if use_bn:
         x = BatchNormalization(name=f"{name_prefix}_pw_bn")(x)
@@ -1014,20 +1012,27 @@ def tf_alternating_block(x, filters, activation="relu", use_bn=True, name_prefix
     x = Activation(activation)(x)
 
     # ---- Joint TF modeling ----
-    x = Conv2D(filters, (3, 3), padding="same",
-               kernel_initializer="he_normal",
-               name=f"{name_prefix}_joint")(x)
+    x = Conv2D(
+        filters,
+        (3, 3),
+        padding="same",
+        kernel_initializer="he_normal",
+        name=f"{name_prefix}_joint",
+    )(x)
     if use_bn:
         x = BatchNormalization(name=f"{name_prefix}_jbn")(x)
     x = Activation(activation)(x)
 
     return x
+
+
 def broadcast_speaker(embed, target_tensor):
-        target_shape = target_tensor.shape # (Batch, T, F, C)
-        s = layers.Dense(target_shape[-1])(embed)
-        s = layers.Reshape((1, 1, target_shape[-1]))(s)
-        # Tile/Broadcast to (T, F, C)
-        return layers.UpSampling2D(size=(target_shape[1], target_shape[2]))(s)
+    target_shape = target_tensor.shape  # (Batch, T, F, C)
+    s = layers.Dense(target_shape[-1])(embed)
+    s = layers.Reshape((1, 1, target_shape[-1]))(s)
+    # Tile/Broadcast to (T, F, C)
+    return layers.UpSampling2D(size=(target_shape[1], target_shape[2]))(s)
+
 
 def eca_kernel_size(channels, gamma=2, b=1):
     """Odd 1D kernel from ECA-Net: k = |log2(C)/gamma + b/gamma|, forced odd."""
@@ -1052,7 +1057,7 @@ def eca_block(x, name="eca"):
     return Multiply(name=name)([x, y])
 
 
-@tf.keras.utils.register_keras_serializable()
+@saving.register_keras_serializable()
 class ASFFFusion(Layer):
     """Two-input adaptively spatial feature fusion.
 
@@ -1070,14 +1075,20 @@ class ASFFFusion(Layer):
         self.prefer_left = bool(prefer_left)
         # Created here so Keras tracks them. build() is too late for the functional model.
         self.compress_left = Conv2D(
-            self.compress, 1, padding="same", use_bias=False, kernel_initializer="he_normal"
+            self.compress,
+            1,
+            padding="same",
+            use_bias=False,
+            kernel_initializer="he_normal",
         )
         self.compress_right = Conv2D(
-            self.compress, 1, padding="same", use_bias=False, kernel_initializer="he_normal"
+            self.compress,
+            1,
+            padding="same",
+            use_bias=False,
+            kernel_initializer="he_normal",
         )
-        bias = (
-            keras.initializers.Constant([2.0, -2.0]) if self.prefer_left else "zeros"
-        )
+        bias = initializers.Constant([2.0, -2.0]) if self.prefer_left else "zeros"
         self.level = Conv2D(
             2, 1, padding="same", kernel_initializer="zeros", bias_initializer=bias
         )
@@ -1107,6 +1118,7 @@ class ASFFFusion(Layer):
         config.update({"compress": self.compress, "prefer_left": self.prefer_left})
         return config
 
+
 def attentive_pooling(x, name="att_pool"):
     """
     Attentive statistics pooling.
@@ -1130,33 +1142,8 @@ def attentive_pooling(x, name="att_pool"):
     )([second, mean])
     return layers.Concatenate(axis=-1, name=f"{name}_stats")([mean, std])
 
-def cross_attention_cond(x, speaker_embedding, num_heads=4, key_dim=64):
-    """
-    Cross-attention conditioning.
 
-    x: (B, T, F, C)
-    speaker_embedding: (B, D)
-    returns: (B, T, F, C)
-    """
-    B, T, F, C = x.shape
-    # Flatten spatial dims: (B, T*F, C)
-    x_flat = Reshape((T * F, C))(x)
-    # Speaker as query: (B, 1, D)
-    q = Reshape((1, speaker_embedding.shape[-1]))(speaker_embedding)
-    # Project to match channels
-    q = Dense(C)(q)
-    # Cross-attention
-    attn = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(
-        query=q, value=x_flat, key=x_flat
-    )
-    # Broadcast back to all positions
-    attn = RepeatVector(T * F)(attn[:, 0, :])
-    # Reshape back to feature map
-    attn_map = Reshape((T, F, C))(attn)
-    # Residual modulation
-    return x + attn_map
-
-@tf.keras.utils.register_keras_serializable()
+@saving.register_keras_serializable()
 class ChunkFullReference(Layer):
     """Split a full-utterance spectrogram into contiguous time chunks."""
 
@@ -1170,7 +1157,9 @@ class ChunkFullReference(Layer):
         freq = ref_x.shape[2]
         channels = ref_x.shape[3]
         if time is None or freq is None or channels is None:
-            raise ValueError("full-utterance reference must have a fixed spectrogram length")
+            raise ValueError(
+                "full-utterance reference must have a fixed spectrogram length"
+            )
         if time % self.chunk_frames != 0:
             raise ValueError(
                 f"reference frames ({time}) must be divisible by chunk size ({self.chunk_frames})"
@@ -1195,7 +1184,7 @@ class ChunkFullReference(Layer):
         return config
 
 
-@tf.keras.utils.register_keras_serializable()
+@saving.register_keras_serializable()
 class ApplyChunkMask(Layer):
     def call(self, inputs):
         sequence, mask = inputs
@@ -1205,7 +1194,7 @@ class ApplyChunkMask(Layer):
         return input_shape[0]
 
 
-@tf.keras.utils.register_keras_serializable()
+@saving.register_keras_serializable()
 class MaskedAttentivePooling(Layer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -1215,7 +1204,9 @@ class MaskedAttentivePooling(Layer):
         sequence, mask = inputs
         scores = self.score(sequence)
         mask = tf.expand_dims(tf.cast(mask, scores.dtype), axis=-1)
-        weights = tf.nn.softmax(scores + (1.0 - mask) * tf.constant(-1e9, dtype=scores.dtype), axis=1)
+        weights = tf.nn.softmax(
+            scores + (1.0 - mask) * tf.constant(-1e9, dtype=scores.dtype), axis=1
+        )
         mean = tf.reduce_sum(sequence * weights, axis=1)
         centered = sequence - tf.expand_dims(mean, axis=1)
         variance = tf.reduce_sum(weights * tf.square(centered), axis=1)
@@ -1230,7 +1221,9 @@ class MaskedAttentivePooling(Layer):
         return (sequence_shape[0], channels * 2)
 
 
-def _reference_conv_sequence(ref_enc, filters_ref, num_layers, activation, use_batch_norm, prefix=""):
+def _reference_conv_sequence(
+    ref_enc, filters_ref, num_layers, activation, use_batch_norm, prefix=""
+):
     def layer(cls, *args, name=None, **kwargs):
         if name:
             kwargs["name"] = name
@@ -1238,46 +1231,66 @@ def _reference_conv_sequence(ref_enc, filters_ref, num_layers, activation, use_b
 
     def conv(kernel, name=None):
         return layer(
-            Conv2D, filters_ref, kernel, activation=activation, padding="same", name=name
+            Conv2D,
+            filters_ref,
+            kernel,
+            activation=activation,
+            padding="same",
+            name=name,
         )
 
     for l in range(num_layers):
         original_ref_enc = ref_enc
-        ref_enc_f = TimeDistributed(conv((1, 3), f"{prefix}_fconv_{l}" if prefix else None))(ref_enc)
+        ref_enc_f = TimeDistributed(
+            conv((1, 3), f"{prefix}_fconv_{l}" if prefix else None)
+        )(ref_enc)
         if use_batch_norm:
-            ref_enc = TimeDistributed(layer(BatchNormalization, name=f"{prefix}_fbn_{l}" if prefix else None))(
-                ref_enc_f
-            )
-        ref_enc__t = TimeDistributed(conv((3, 1), f"{prefix}_tconv_{l}" if prefix else None))(ref_enc)
+            ref_enc = TimeDistributed(
+                layer(BatchNormalization, name=f"{prefix}_fbn_{l}" if prefix else None)
+            )(ref_enc_f)
+        ref_enc__t = TimeDistributed(
+            conv((3, 1), f"{prefix}_tconv_{l}" if prefix else None)
+        )(ref_enc)
         if use_batch_norm:
-            ref_enc = TimeDistributed(layer(BatchNormalization, name=f"{prefix}_tbn_{l}" if prefix else None))(
-                ref_enc__t
-            )
-        ref_enc = layer(Concatenate, name=f"{prefix}_cat_{l}" if prefix else None)([ref_enc_f, ref_enc__t])
-        ref_enc_t_1 = TimeDistributed(conv((3, 1), f"{prefix}_tconv_b_{l}" if prefix else None))(
-            original_ref_enc
+            ref_enc = TimeDistributed(
+                layer(BatchNormalization, name=f"{prefix}_tbn_{l}" if prefix else None)
+            )(ref_enc__t)
+        ref_enc = layer(Concatenate, name=f"{prefix}_cat_{l}" if prefix else None)(
+            [ref_enc_f, ref_enc__t]
         )
+        ref_enc_t_1 = TimeDistributed(
+            conv((3, 1), f"{prefix}_tconv_b_{l}" if prefix else None)
+        )(original_ref_enc)
         if use_batch_norm:
             original_ref_enc = TimeDistributed(
-                layer(BatchNormalization, name=f"{prefix}_tbn_b_{l}" if prefix else None)
+                layer(
+                    BatchNormalization, name=f"{prefix}_tbn_b_{l}" if prefix else None
+                )
             )(ref_enc_t_1)
-        ref_enc_f_1 = TimeDistributed(conv((1, 3), f"{prefix}_fconv_b_{l}" if prefix else None))(
-            original_ref_enc
-        )
+        ref_enc_f_1 = TimeDistributed(
+            conv((1, 3), f"{prefix}_fconv_b_{l}" if prefix else None)
+        )(original_ref_enc)
         if use_batch_norm:
             original_ref_enc = TimeDistributed(
-                layer(BatchNormalization, name=f"{prefix}_fbn_b_{l}" if prefix else None)
+                layer(
+                    BatchNormalization, name=f"{prefix}_fbn_b_{l}" if prefix else None
+                )
             )(ref_enc_f_1)
-        ref_enc_branch2 = layer(Concatenate, name=f"{prefix}_cat_b_{l}" if prefix else None)(
-            [ref_enc_t_1, ref_enc_f_1]
-        )
+        ref_enc_branch2 = layer(
+            Concatenate, name=f"{prefix}_cat_b_{l}" if prefix else None
+        )([ref_enc_t_1, ref_enc_f_1])
         ref_enc = layer(Concatenate, name=f"{prefix}_cat_both_{l}" if prefix else None)(
             [ref_enc, ref_enc_branch2]
         )
-        ref_enc = TimeDistributed(conv((3, 3), f"{prefix}_joint_{l}" if prefix else None))(ref_enc)
+        ref_enc = TimeDistributed(
+            conv((3, 3), f"{prefix}_joint_{l}" if prefix else None)
+        )(ref_enc)
         if use_batch_norm:
             ref_enc = TimeDistributed(
-                layer(BatchNormalization, name=f"{prefix}_joint_bn_{l}" if prefix else None)
+                layer(
+                    BatchNormalization,
+                    name=f"{prefix}_joint_bn_{l}" if prefix else None,
+                )
             )(ref_enc)
         ref_enc = TimeDistributed(
             layer(MaxPooling2D, (1, 2), name=f"{prefix}_pool_{l}" if prefix else None)
@@ -1288,42 +1301,63 @@ def _reference_conv_sequence(ref_enc, filters_ref, num_layers, activation, use_b
     )(ref_enc)
 
 
-def encode_reference_segments(ref_x, filters_ref, num_layers, activation, use_batch_norm):
+def encode_reference_segments(
+    ref_x, filters_ref, num_layers, activation, use_batch_norm
+):
     """Encode K fixed reference views sampled from the auxiliary utterance."""
     ref_seq = _reference_conv_sequence(
         ref_x, filters_ref, num_layers, activation, use_batch_norm, prefix=""
     )
-    ref_seq = add_xlstm_block(ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=1, prefix="ref")
+    ref_seq = add_xlstm_block(
+        ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=1, prefix="ref"
+    )
     speaker_embed = attentive_pooling(ref_seq, name="speaker_att_pool")
-    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(speaker_embed)
+    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(
+        speaker_embed
+    )
     ref_seq_mask = SequenceOnes(name="ref_seq_ones")(ref_seq)
     return speaker_embed, ref_seq, ref_seq_mask
 
 
 def encode_reference_full(
-    ref_x, ref_mask, filters_ref, num_layers, activation, use_batch_norm, chunk_frames=128
+    ref_x,
+    ref_mask,
+    filters_ref,
+    num_layers,
+    activation,
+    use_batch_norm,
+    chunk_frames=128,
 ):
     """Encode one full auxiliary spectrogram.
 
     Long utterances are split into contiguous ``chunk_frames`` windows, in order.
     Padded windows are masked out of the chunk sequence and the speaker pool.
     """
-    ref_views, chunk_mask = ChunkFullReference(chunk_frames=chunk_frames, name="ref_full_chunk")(
-        [ref_x, ref_mask]
-    )
+    ref_views, chunk_mask = ChunkFullReference(
+        chunk_frames=chunk_frames, name="ref_full_chunk"
+    )([ref_x, ref_mask])
     ref_seq = _reference_conv_sequence(
-        ref_views, filters_ref, num_layers, activation, use_batch_norm, prefix="ref_full"
+        ref_views,
+        filters_ref,
+        num_layers,
+        activation,
+        use_batch_norm,
+        prefix="ref_full",
     )
     ref_seq = ApplyChunkMask(name="ref_full_apply_mask")([ref_seq, chunk_mask])
     ref_seq = add_xlstm_block(
         ref_seq, hidden_dim=ref_seq.shape[-1], num_layers=1, prefix="ref_full"
     )
-    speaker_embed = MaskedAttentivePooling(name="speaker_att_pool")([ref_seq, chunk_mask])
-    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(speaker_embed)
+    speaker_embed = MaskedAttentivePooling(name="speaker_att_pool")(
+        [ref_seq, chunk_mask]
+    )
+    speaker_embed = layers.Dense(128, activation="tanh", name="speaker_final_proj")(
+        speaker_embed
+    )
     return speaker_embed, ref_seq, chunk_mask
 
 
-@tf.keras.utils.register_keras_serializable()
+@saving.register_keras_serializable()
 class SequenceOnes(Layer):
     def call(self, sequence):
         return tf.ones_like(sequence[..., 0])
@@ -1332,7 +1366,7 @@ class SequenceOnes(Layer):
         return input_shape[:-1]
 
 
-@tf.keras.utils.register_keras_serializable()
+@saving.register_keras_serializable()
 class AttentionMask(Layer):
     """Broadcast a (batch, keys) mask to (batch, 1, keys) for multi-head attention."""
 
@@ -1401,13 +1435,15 @@ def enrollment_cross_attention(x, ref_seq, ref_seq_mask, name="enroll_xattn"):
     return Conv2D(channels, 1, padding="same", name=f"{name}_proj")(attended)
 
 
-@tf.keras.utils.register_keras_serializable()
+@saving.register_keras_serializable()
 class DropEnrollment(Layer):
     """Keep the enrollment input in the graph and add nothing to the features."""
 
     def call(self, inputs):
         features, *rest = inputs
-        sink = tf.add_n([tf.cast(tf.reduce_sum(tensor), features.dtype) for tensor in rest])
+        sink = tf.add_n(
+            [tf.cast(tf.reduce_sum(tensor), features.dtype) for tensor in rest]
+        )
         return features + sink * 0.0
 
     def compute_output_shape(self, input_shape):
@@ -1442,11 +1478,15 @@ def custom_unet(
 
     main_input = Input(input_shape, name="noisy_main")  # (T, F, C)
     if full_utterance:
-        ref_input = Input((max_ref_frames, input_shape[1], input_shape[2]), name="noisy_ref")
+        ref_input = Input(
+            (max_ref_frames, input_shape[1], input_shape[2]), name="noisy_ref"
+        )
         ref_mask_input = Input((max_ref_frames,), name="ref_mask")
         model_inputs = [main_input, ref_input, ref_mask_input]
     else:
-        ref_input = Input((4, segment_frames, input_shape[1], input_shape[2]), name="noisy_ref")
+        ref_input = Input(
+            (4, segment_frames, input_shape[1], input_shape[2]), name="noisy_ref"
+        )
         ref_mask_input = None
         model_inputs = [main_input, ref_input]
     # Power-law magnitude compression, undone on the network output below.
@@ -1462,13 +1502,21 @@ def custom_unet(
         if full_utterance:
             enroll, enroll_mask = ref_x, ref_mask_input
         else:
-            views, frames, bins = int(ref_x.shape[1]), int(ref_x.shape[2]), int(ref_x.shape[3])
+            views, frames, bins = (
+                int(ref_x.shape[1]),
+                int(ref_x.shape[2]),
+                int(ref_x.shape[3]),
+            )
             enroll = Reshape((views * frames, bins, 2), name="enroll_flat")(ref_x)
             enroll_mask = TimeOnes(name="enroll_mask")(enroll)
         sim_and_mean = STFTFrameSimilarity(name="stft_sim")([x, enroll, enroll_mask])
         time_bins, freq_bins = int(x.shape[1]), int(x.shape[2])
-        guided = Reshape((time_bins, freq_bins, 2), name="stft_guided")(sim_and_mean[..., 0:2])
-        enroll_mean = Reshape((time_bins, freq_bins, 2), name="stft_mean")(sim_and_mean[..., 2:4])
+        guided = Reshape((time_bins, freq_bins, 2), name="stft_guided")(
+            sim_and_mean[..., 0:2]
+        )
+        enroll_mean = Reshape((time_bins, freq_bins, 2), name="stft_mean")(
+            sim_and_mean[..., 2:4]
+        )
         guided = ASFFFusion(name="stft_asff")([guided, enroll_mean])
         if "early" in guided_sites:
             x = Concatenate(axis=-1, name="stft_fuse")([x, guided])
@@ -1478,7 +1526,7 @@ def custom_unet(
 
     # Four stride-2 pools need both axes divisible by 16. The 8 ms hop does not
     # land on that grid (497 x 129), so pad here and crop before the mask.
-    unet_multiple = 2 ** num_layers
+    unet_multiple = 2**num_layers
     spec_time, spec_freq = int(x.shape[1]), int(x.shape[2])
     pad_time = (unet_multiple - spec_time % unet_multiple) % unet_multiple
     pad_freq = (unet_multiple - spec_freq % unet_multiple) % unet_multiple
@@ -1498,11 +1546,15 @@ def custom_unet(
         if "bottleneck" in guided_sites:
             guided_bn = guided_map
             for level in range(num_layers):
-                guided_bn = AveragePooling2D((2, 2), name=f"guided_pool_{level}")(guided_bn)
+                guided_bn = AveragePooling2D((2, 2), name=f"guided_pool_{level}")(
+                    guided_bn
+                )
 
     down_layers = []
     for l in range(num_layers):
-        x=tf_alternating_block(x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}")
+        x = tf_alternating_block(
+            x, filters, activation, use_bn=True, name_prefix=f"tfb_{l}"
+        )
         x = eca_block(x, name=f"enc_eca_{l}")
         down_layers.append(x)
         x = MaxPooling2D((2, 2))(x)
@@ -1527,20 +1579,28 @@ def custom_unet(
             )
 
         x_film = film(x, speaker_embed)
-        attn_map = enrollment_cross_attention(x, ref_seq, ref_seq_mask, name="bn_enroll_xattn")
+        attn_map = enrollment_cross_attention(
+            x, ref_seq, ref_seq_mask, name="bn_enroll_xattn"
+        )
         x = ASFFFusion(name="bn_asff")([x_film, attn_map])
         x = eca_block(x, name="bn_eca")
     # Fuse the cue into the encoder map so the xLSTM reads it. Doing this after
     # the xLSTM leaves the sequence model on the mixture alone.
     if stft_interact and "bottleneck" in guided_sites:
-        guided_proj = Conv2D(int(x.shape[-1]), 1, padding="same", name="bn_guided_proj")(guided_bn)
+        guided_proj = Conv2D(
+            int(x.shape[-1]), 1, padding="same", name="bn_guided_proj"
+        )(guided_bn)
         x = ASFFFusion(name="bn_guided_asff")([x, guided_proj])
     T_small, F_small, C_small = x.shape[1], x.shape[2], x.shape[3]
     x_seq = Reshape((T_small, F_small * C_small))(x)
-    x_seq = add_xlstm_block(x_seq, hidden_dim=128, num_layers=1, prefix="main_bottleneck")
+    x_seq = add_xlstm_block(
+        x_seq, hidden_dim=128, num_layers=1, prefix="main_bottleneck"
+    )
     x_expanded = TimeDistributed(Dense(F_small * C_small))(x_seq)
     x_reshaped = Reshape((T_small, F_small, C_small))(x_expanded)
-    x = Conv2D(C_small, (1, 1), padding="same", activation=activation, name="bn_reconstruct")(x_reshaped)
+    x = Conv2D(
+        C_small, (1, 1), padding="same", activation=activation, name="bn_reconstruct"
+    )(x_reshaped)
     # if not use_dropout_on_upsampling:
     #     dropout = 0.0
     #     dropout_change_per_layer = 0.0
@@ -1560,7 +1620,11 @@ def custom_unet(
             )(guided_map)
             x = Concatenate(axis=-1, name=f"up_guided_cat_{filters}")([x, guided_here])
             x = tf_alternating_block(
-                x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}"
+                x,
+                filters,
+                activation,
+                use_bn=use_batch_norm,
+                name_prefix=f"up_conv_{filters}",
             )
     elif inject == "embed":
         spk_field = attn_map
@@ -1568,7 +1632,9 @@ def custom_unet(
             filters = conv.shape[-1]
             # dropout -= dropout_change_per_layer
             x = upsample(filters, (2, 2), strides=(2, 2), padding="same")(x)
-            spk_field = UpSampling2D((2, 2), interpolation="bilinear", name=f"up_spk_{filters}")(spk_field)
+            spk_field = UpSampling2D(
+                (2, 2), interpolation="bilinear", name=f"up_spk_{filters}"
+            )(spk_field)
             x = film(x, speaker_embed)
             if use_attention:
                 x = attention_concat(conv_below=x, skip_connection=conv)
@@ -1579,7 +1645,13 @@ def custom_unet(
                 int(x.shape[-1]), 1, padding="same", name=f"up_spk_proj_{filters}"
             )(spk_field)
             x = ASFFFusion(name=f"up_asff_{filters}")([x, spk_res_up])
-            x = tf_alternating_block(x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}")
+            x = tf_alternating_block(
+                x,
+                filters,
+                activation,
+                use_bn=use_batch_norm,
+                name_prefix=f"up_conv_{filters}",
+            )
     else:
         for conv in reversed(down_layers):
             filters = conv.shape[-1]
@@ -1589,7 +1661,11 @@ def custom_unet(
             else:
                 x = concatenate([x, conv])
             x = tf_alternating_block(
-                x, filters, activation, use_bn=use_batch_norm, name_prefix=f"up_conv_{filters}"
+                x,
+                filters,
+                activation,
+                use_bn=use_batch_norm,
+                name_prefix=f"up_conv_{filters}",
             )
     if pad_time or pad_freq:
         x = Cropping2D(cropping=((0, pad_time), (0, pad_freq)), name="unet_crop")(x)
@@ -1597,29 +1673,35 @@ def custom_unet(
     input_i = main_input_copy[..., 1:2]
     # A zero or near-zero kernel makes the waveform the mixture and scales every
     # gradient behind the mask by that kernel. he_normal keeps the path open.
-    mask_r = Conv2D(1, (1, 1), activation=None, kernel_initializer="he_normal", name="mask_real")(x)
-    mask_i = Conv2D(1, (1, 1), activation=None, kernel_initializer="he_normal", name="mask_imag")(x)
+    mask_r = Conv2D(
+        1, (1, 1), activation=None, kernel_initializer="he_normal", name="mask_real"
+    )(x)
+    mask_i = Conv2D(
+        1, (1, 1), activation=None, kernel_initializer="he_normal", name="mask_imag"
+    )(x)
     mask_r = LearnableScale(initial_value=2.0, name="scale_r")(mask_r)
     mask_i = LearnableScale(initial_value=2.0, name="scale_i")(mask_i)
-    out_r = layers.Subtract()([
-        layers.Multiply()([mask_r, input_r]),
-        layers.Multiply()([mask_i, input_i])
-    ])
-    out_i = layers.Add()([
-        layers.Multiply()([mask_r, input_i]),
-        layers.Multiply()([mask_i, input_r])
-    ])
+    out_r = layers.Subtract()(
+        [layers.Multiply()([mask_r, input_r]), layers.Multiply()([mask_i, input_i])]
+    )
+    out_i = layers.Add()(
+        [layers.Multiply()([mask_r, input_i]), layers.Multiply()([mask_i, input_r])]
+    )
     out_r = layers.Add()([input_r, out_r])
     out_i = layers.Add()([input_i, out_i])
 
     # --- Merge back to 2-channel and undo magnitude compression ---
     outputs = Concatenate(axis=-1)([out_r, out_i])
-    outputs = PowerLawComplexSpec(factor=1.0 / MAG_COMPRESS, name="decompress_out")(outputs)
+    outputs = PowerLawComplexSpec(factor=1.0 / MAG_COMPRESS, name="decompress_out")(
+        outputs
+    )
 
     return Model(inputs=model_inputs, outputs=[outputs])
 
 
-model_filename = _checkpoint_filename(args.l.replace("-", "_") if args.l is not None else "si_sdr")
+model_filename = _checkpoint_filename(
+    args.l.replace("-", "_") if args.l is not None else "si_sdr"
+)
 with strategy.scope():
     model = custom_unet(
         input_shape=(N_FRAMES, N_BINS, 2),
@@ -1688,7 +1770,9 @@ def _spec_to_waveform(spec_2ch):
 
 def _resample_8k_to_10k(wav):
     length = tf.shape(wav)[1]
-    new_length = tf.cast(tf.round(tf.cast(length, tf.float32) * (_STOI_FS / TARGET_SR)), tf.int32)
+    new_length = tf.cast(
+        tf.round(tf.cast(length, tf.float32) * (_STOI_FS / TARGET_SR)), tf.int32
+    )
     image = wav[:, :, None, None]
     resized = tf.image.resize(image, [new_length, 1], method="bilinear")
     return resized[:, :, 0, 0]
@@ -1740,23 +1824,35 @@ def stsa_mse(y_true, y_pred):
 def _intelligibility_stoi(y_true, y_pred):
     target = _envelope_segments(_third_octave_envelopes(_spec_to_waveform(y_true)))
     estimate = _envelope_segments(_third_octave_envelopes(_spec_to_waveform(y_pred)))
-    target_norm = tf.sqrt(tf.reduce_sum(tf.square(target), axis=-1, keepdims=True) + 1e-8)
-    estimate_norm = tf.sqrt(tf.reduce_sum(tf.square(estimate), axis=-1, keepdims=True) + 1e-8)
+    target_norm = tf.sqrt(
+        tf.reduce_sum(tf.square(target), axis=-1, keepdims=True) + 1e-8
+    )
+    estimate_norm = tf.sqrt(
+        tf.reduce_sum(tf.square(estimate), axis=-1, keepdims=True) + 1e-8
+    )
     estimate = estimate * (target_norm / estimate_norm)
     clip = 1.0 + 10 ** (-_STOI_BETA / 20.0)
     estimate = tf.minimum(estimate, target * clip)
     target = target - tf.reduce_mean(target, axis=-1, keepdims=True)
     estimate = estimate - tf.reduce_mean(estimate, axis=-1, keepdims=True)
-    target = target / tf.sqrt(tf.reduce_sum(tf.square(target), axis=-1, keepdims=True) + 1e-8)
-    estimate = estimate / tf.sqrt(tf.reduce_sum(tf.square(estimate), axis=-1, keepdims=True) + 1e-8)
+    target = target / tf.sqrt(
+        tf.reduce_sum(tf.square(target), axis=-1, keepdims=True) + 1e-8
+    )
+    estimate = estimate / tf.sqrt(
+        tf.reduce_sum(tf.square(estimate), axis=-1, keepdims=True) + 1e-8
+    )
     return tf.reduce_mean(tf.reduce_sum(target * estimate, axis=-1))
 
 
 def _row_col_normalize(segments):
     segments = segments - tf.reduce_mean(segments, axis=-1, keepdims=True)
-    segments = segments / tf.sqrt(tf.reduce_sum(tf.square(segments), axis=-1, keepdims=True) + 1e-8)
+    segments = segments / tf.sqrt(
+        tf.reduce_sum(tf.square(segments), axis=-1, keepdims=True) + 1e-8
+    )
     segments = segments - tf.reduce_mean(segments, axis=-2, keepdims=True)
-    segments = segments / tf.sqrt(tf.reduce_sum(tf.square(segments), axis=-2, keepdims=True) + 1e-8)
+    segments = segments / tf.sqrt(
+        tf.reduce_sum(tf.square(segments), axis=-2, keepdims=True) + 1e-8
+    )
     return segments
 
 
@@ -1768,7 +1864,9 @@ def _intelligibility_estoi(y_true, y_pred):
     estimate = tf.transpose(estimate, [0, 2, 1, 3])
     target = _row_col_normalize(target)
     estimate = _row_col_normalize(estimate)
-    column_dots = tf.reduce_sum(target * estimate, axis=[2, 3]) / tf.cast(_STOI_N, tf.float32)
+    column_dots = tf.reduce_sum(target * estimate, axis=[2, 3]) / tf.cast(
+        _STOI_N, tf.float32
+    )
     return tf.reduce_mean(column_dots)
 
 
@@ -2003,7 +2101,9 @@ def _pmsqe_at_sll(spectra):
 
 def _pmsqe_audible_power(bark_spectra, factor):
     threshold = _PMSQE_ABS_THRESH * factor
-    audible = tf.where(bark_spectra > threshold, bark_spectra, tf.zeros_like(bark_spectra))
+    audible = tf.where(
+        bark_spectra > threshold, bark_spectra, tf.zeros_like(bark_spectra)
+    )
     return tf.reduce_sum(audible, axis=-1, keepdims=True)
 
 
@@ -2013,10 +2113,14 @@ def _pmsqe_frequency_equalization(reference, degraded):
     reference_bands = tf.where(above, reference, tf.zeros_like(reference))
     degraded_bands = tf.where(above, degraded, tf.zeros_like(degraded))
     reference_power = tf.reduce_sum(
-        tf.where(active, reference_bands, tf.zeros_like(reference_bands)), axis=-2, keepdims=True
+        tf.where(active, reference_bands, tf.zeros_like(reference_bands)),
+        axis=-2,
+        keepdims=True,
     )
     degraded_power = tf.reduce_sum(
-        tf.where(active, degraded_bands, tf.zeros_like(degraded_bands)), axis=-2, keepdims=True
+        tf.where(active, degraded_bands, tf.zeros_like(degraded_bands)),
+        axis=-2,
+        keepdims=True,
     )
     equalizer = (reference_power + 1000.0) / (degraded_power + 1000.0)
     equalizer = tf.clip_by_value(equalizer, 0.01, 100.0)
@@ -2032,12 +2136,16 @@ def _pmsqe_gain_equalization(reference, degraded):
 
 
 def _pmsqe_loudness(bark_spectra):
-    loudness = _PMSQE_SL * tf.pow(_PMSQE_ABS_THRESH / 0.5, _PMSQE_ZWICKER) * (
-        tf.pow(
-            0.5 + 0.5 * bark_spectra / _PMSQE_ABS_THRESH,
-            _PMSQE_ZWICKER,
+    loudness = (
+        _PMSQE_SL
+        * tf.pow(_PMSQE_ABS_THRESH / 0.5, _PMSQE_ZWICKER)
+        * (
+            tf.pow(
+                0.5 + 0.5 * bark_spectra / _PMSQE_ABS_THRESH,
+                _PMSQE_ZWICKER,
+            )
+            - 1.0
         )
-        - 1.0
     )
     return tf.where(bark_spectra < _PMSQE_ABS_THRESH, tf.zeros_like(loudness), loudness)
 
@@ -2055,10 +2163,14 @@ def _pmsqe_from_power(reference_power, degraded_power):
     masking = 0.25 * tf.minimum(reference_loudness, degraded_loudness)
     symmetric = tf.maximum(difference - masking, 1e-8)
     asymmetry = tf.pow((degraded + 50.0) / (reference + 50.0), 1.2)
-    asymmetry = tf.where(asymmetry < 3.0, tf.zeros_like(asymmetry), tf.minimum(asymmetry, 12.0))
+    asymmetry = tf.where(
+        asymmetry < 3.0, tf.zeros_like(asymmetry), tf.minimum(asymmetry, 12.0)
+    )
     asymmetric = asymmetry * symmetric
     symmetric_frame = tf.sqrt(
-        tf.reduce_sum(tf.square(symmetric * _PMSQE_WIDTH) + 1e-8, axis=-1, keepdims=True)
+        tf.reduce_sum(
+            tf.square(symmetric * _PMSQE_WIDTH) + 1e-8, axis=-1, keepdims=True
+        )
     )
     symmetric_frame = symmetric_frame * _PMSQE_SQRT_WIDTH
     asymmetric_frame = tf.reduce_sum(asymmetric * _PMSQE_WIDTH, axis=-1, keepdims=True)
@@ -2066,7 +2178,9 @@ def _pmsqe_from_power(reference_power, degraded_power):
     weights = tf.pow((audible + 1e5) / 1e7, 0.04)
     symmetric_frame = tf.minimum(symmetric_frame / weights, 45.0)
     asymmetric_frame = tf.minimum(asymmetric_frame / weights, 45.0)
-    return tf.reduce_mean(_PMSQE_ALPHA * symmetric_frame + _PMSQE_BETA * asymmetric_frame)
+    return tf.reduce_mean(
+        _PMSQE_ALPHA * symmetric_frame + _PMSQE_BETA * asymmetric_frame
+    )
 
 
 def pmsqe_loss(y_true, y_pred):
@@ -2108,13 +2222,15 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
     # 2. Compressed Complex Loss (Handles Phase implicitly and stably)
     # This transforms the complex values into the compressed domain
     # Formula: (r + ji) / |mag| * |mag|^gamma = (r + ji) * |mag|^(gamma-1)
-    factor_t = mag_t**(gamma - 1)
-    factor_p = mag_p**(gamma - 1)
-    
+    factor_t = mag_t ** (gamma - 1)
+    factor_p = mag_p ** (gamma - 1)
+
     c_real_t, c_imag_t = r_t * factor_t, i_t * factor_t
     c_real_p, c_imag_p = r_p * factor_p, i_p * factor_p
-    
-    complex_loss = tf.reduce_mean(tf.abs(c_real_t - c_real_p) + tf.abs(c_imag_t - c_imag_p))
+
+    complex_loss = tf.reduce_mean(
+        tf.abs(c_real_t - c_real_p) + tf.abs(c_imag_t - c_imag_p)
+    )
 
     # 3. Temporal Consistency (Delta Loss)
     # Using the compressed magnitude for delta often yields better PESQ
@@ -2122,25 +2238,31 @@ def complex_enhancement_loss_pc(y_true, y_pred, gamma=0.5, eps=1e-8):
     delta_mag_p = mag_p[:, 1:, :] - mag_p[:, :-1, :]
     consistency_loss = tf.reduce_mean(tf.square(delta_mag_t - delta_mag_p))
 
-    # 4. Scale-Invariant Signal-to-Noise Ratio (SI-SNR) 
+    # 4. Scale-Invariant Signal-to-Noise Ratio (SI-SNR)
     # Much more stable than a custom SI-L1 loss
     t_flat = tf.reshape(y_true, [tf.shape(y_true)[0], -1])
     p_flat = tf.reshape(y_pred, [tf.shape(y_pred)[0], -1])
-    
+
     dot = tf.reduce_sum(t_flat * p_flat, axis=1, keepdims=True)
     snr_norm = tf.reduce_sum(t_flat**2, axis=1, keepdims=True) + eps
     target_proj = (dot / snr_norm) * t_flat
-    
-    noise_res = p_flat - target_proj
-    si_snr = 10 * tf.math.log(tf.reduce_sum(target_proj**2, axis=1) / 
-                             (tf.reduce_sum(noise_res**2, axis=1) + eps) + eps) / tf.math.log(10.0)
-    
-    si_loss = -tf.reduce_mean(si_snr) # Negative because we want to maximize SNR
 
-    return (1.0 * mag_loss + 
-            1.0 * complex_loss + 
-            0.5 * consistency_loss + 
-            2.0 * si_loss) # SI-SNR scale is much larger, so weight it lower
+    noise_res = p_flat - target_proj
+    si_snr = (
+        10
+        * tf.math.log(
+            tf.reduce_sum(target_proj**2, axis=1)
+            / (tf.reduce_sum(noise_res**2, axis=1) + eps)
+            + eps
+        )
+        / tf.math.log(10.0)
+    )
+
+    si_loss = -tf.reduce_mean(si_snr)  # Negative because we want to maximize SNR
+
+    return (
+        1.0 * mag_loss + 1.0 * complex_loss + 0.5 * consistency_loss + 2.0 * si_loss
+    )  # SI-SNR scale is much larger, so weight it lower
 
 
 model.summary()
@@ -2246,17 +2368,17 @@ def main():
     arr = np.array(results, dtype=object)
 
     print("\n========== FINAL RESULTS ==========")
-    print(f"SI-SDR (mix): {np.mean(arr[:,1].astype(float)):.2f}")
-    print(f"SI-SDR (enh): {np.mean(arr[:,2].astype(float)):.2f}")
-    print(f"SI-SDRi:      {np.mean(arr[:,7].astype(float)):.2f}")
+    print(f"SI-SDR (mix): {np.mean(arr[:, 1].astype(float)):.2f}")
+    print(f"SI-SDR (enh): {np.mean(arr[:, 2].astype(float)):.2f}")
+    print(f"SI-SDRi:      {np.mean(arr[:, 7].astype(float)):.2f}")
 
-    print(f"PESQ (mix):   {np.nanmean(arr[:,3].astype(float)):.3f}")
-    print(f"PESQ (enh):   {np.nanmean(arr[:,4].astype(float)):.3f}")
-    print(f"PESQi:        {np.nanmean(arr[:,8].astype(float)):.3f}")
+    print(f"PESQ (mix):   {np.nanmean(arr[:, 3].astype(float)):.3f}")
+    print(f"PESQ (enh):   {np.nanmean(arr[:, 4].astype(float)):.3f}")
+    print(f"PESQi:        {np.nanmean(arr[:, 8].astype(float)):.3f}")
 
-    print(f"STOI (mix):   {np.nanmean(arr[:,5].astype(float)):.3f}")
-    print(f"STOI (enh):   {np.nanmean(arr[:,6].astype(float)):.3f}")
-    print(f"STOIi:        {np.nanmean(arr[:,9].astype(float)):.3f}")
+    print(f"STOI (mix):   {np.nanmean(arr[:, 5].astype(float)):.3f}")
+    print(f"STOI (enh):   {np.nanmean(arr[:, 6].astype(float)):.3f}")
+    print(f"STOIi:        {np.nanmean(arr[:, 9].astype(float)):.3f}")
 
     # -------- Save CSV --------
     with open("evaluation_results_full.csv", "w", newline="") as f:
@@ -2293,7 +2415,12 @@ else:
             "The SEF-PNet trainer feeds the whole enrollment utterance. "
             "Pass --full-utterance."
         )
-    from libri2mix.conf_unet_tse_32ms import chunk_size, dev_data, train_data, trainer_conf
+    from libri2mix.conf_unet_tse_32ms import (
+        chunk_size,
+        dev_data,
+        train_data,
+        trainer_conf,
+    )
     from libri2mix.dataset_tse import make_dataloader
     from libri2mix.trainer_tse import SiSnrTrainer, chunk_frames_match
 
@@ -2305,7 +2432,9 @@ else:
     print(f"Training with SEF-PNet SiSnrTrainer ({LOSS_LABELS[args.l]})")
     print(f"Checkpoint: {model_filename}")
     run_epochs = EPOCHS if args.epochs is None else args.epochs
-    print(f"Adam lr={trainer_conf['optimizer_kwargs']['lr']}, batch {batch_size}, epochs {run_epochs}")
+    print(
+        f"Adam lr={trainer_conf['optimizer_kwargs']['lr']}, batch {batch_size}, epochs {run_epochs}"
+    )
     with strategy.scope():
         trainer = SiSnrTrainer(
             model,
@@ -2317,10 +2446,16 @@ else:
         )
     trainer.run(
         make_dataloader(
-            train=True, data_kwargs=train_data, chunk_size=chunk_size, batch_size=batch_size
+            train=True,
+            data_kwargs=train_data,
+            chunk_size=chunk_size,
+            batch_size=batch_size,
         ),
         make_dataloader(
-            train=False, data_kwargs=dev_data, chunk_size=chunk_size, batch_size=batch_size
+            train=False,
+            data_kwargs=dev_data,
+            chunk_size=chunk_size,
+            batch_size=batch_size,
         ),
         num_epochs=run_epochs,
     )

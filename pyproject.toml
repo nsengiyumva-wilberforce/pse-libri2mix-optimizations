@@ -1,0 +1,8 @@
+[tool.pylint.master]
+extension-pkg-allow-list = ["tensorflow", "keras", "tensorflow_io"]
+
+[tool.pylint.typecheck]
+generated-members = ["tensorflow.*", "tf.*", "keras.*"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true

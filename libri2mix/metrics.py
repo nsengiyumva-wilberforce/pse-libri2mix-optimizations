@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import librosa
 import numpy as np
-from pesq import pesq
+from pesq import NoUtterancesError, pesq
 from pystoi import stoi
 
 SR = 8000
@@ -26,7 +26,7 @@ def pesq_score(clean, enhanced):
         clean, enhanced = normalize(clean), normalize(enhanced)
         mode = "nb" if SR == 8000 else "wb"
         return pesq(SR, clean, enhanced, mode)
-    except Exception as e:
+    except (NoUtterancesError, ValueError, RuntimeError) as e:
         print(f"Error calculating PESQ: {e}")
         return np.nan
 
@@ -35,7 +35,7 @@ def stoi_score(clean, enhanced):
     try:
         clean, enhanced = normalize(clean), normalize(enhanced)
         return stoi(clean, enhanced, SR, extended=False)
-    except Exception as e:
+    except (ValueError, RuntimeError) as e:
         print(f"Error calculating STOI: {e}")
         return np.nan
 
