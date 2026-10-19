@@ -132,7 +132,6 @@ class SiSnrTrainer:
         checkpoint,
         logging_period=200,
         no_impr=150,
-        strategy=None,
     ):
         self.model = model
         self.toolkit = toolkit
@@ -141,7 +140,6 @@ class SiSnrTrainer:
         self.logging_period = logging_period
         self.no_impr = no_impr
         self.cur_epoch = 0
-        self.strategy = strategy or tf.distribute.get_strategy()
         self.optimizer = tf.keras.optimizers.Adam(
             learning_rate=float(adam_kwargs["lr"]),
             weight_decay=float(adam_kwargs["weight_decay"]),
@@ -153,19 +151,21 @@ class SiSnrTrainer:
         for variable in self.optimizer.variables:
             if hasattr(variable, "numpy"):
                 variable.numpy()
-        # XLA compiles the replica step only. Compiling the function that calls
-        # strategy.run makes GPU 0 read replica variables that live on GPU 1.
-        self._xla_train = tf.function(self._train_replica, jit_compile=True)
-        self._xla_eval = tf.function(self._eval_replica, jit_compile=True)
+        self._xla_train = tf.function(self._train_step_core, jit_compile=True)
+        self._xla_eval = tf.function(self._eval_step_core, jit_compile=True)
 
     def _waveforms(self, mix, reference, aux_spec, aux_mask, training):
         mix_spec = self.toolkit.stft(mix)
+        compute_dtype = tf.keras.mixed_precision.global_policy().compute_dtype
+        noisy_main = tf.cast(
+            tf.stack([tf.math.real(mix_spec), tf.math.imag(mix_spec)], axis=-1),
+            compute_dtype,
+        )
+        noisy_ref = tf.cast(aux_spec, compute_dtype)
         predicted = self.model(
             {
-                "noisy_main": tf.stack(
-                    [tf.math.real(mix_spec), tf.math.imag(mix_spec)], axis=-1
-                ),
-                "noisy_ref": aux_spec,
+                "noisy_main": noisy_main,
+                "noisy_ref": noisy_ref,
                 "ref_mask": aux_mask,
             },
             training=training,
@@ -184,25 +184,6 @@ class SiSnrTrainer:
             estimate = estimate[..., :width]
             target = target[..., :width]
         return estimate, target
-
-    def _replica_batch(self, mix, reference, valid_len, aux, aux_len):
-        """Each replica keeps an equal slice of the global batch."""
-        ctx = tf.distribute.get_replica_context()
-        if ctx is None:
-            return mix, reference, valid_len, aux, aux_len
-        n = ctx.num_replicas_in_sync
-        if n == 1:
-            return mix, reference, valid_len, aux, aux_len
-        per = tf.shape(mix)[0] // n
-        start = ctx.replica_id_in_sync_group * per
-        stop = start + per
-        return (
-            mix[start:stop],
-            reference[start:stop],
-            valid_len[start:stop],
-            aux[start:stop],
-            aux_len[start:stop],
-        )
 
     def compute_loss(self, mix, reference, valid_len, aux, aux_len, training):
         aux_spec, aux_mask = _enrollment_batch(
@@ -242,76 +223,44 @@ class SiSnrTrainer:
         aux.set_shape([None, width])
         return aux
 
-    def _reduce_step(self, per_loss, per_sisdr):
-        # Each replica returns local_mean / num_replicas. SUM restores the global mean.
-        loss = self.strategy.reduce(tf.distribute.ReduceOp.SUM, per_loss, axis=None)
-        sisdr = self.strategy.reduce(tf.distribute.ReduceOp.MEAN, per_sisdr, axis=None)
-        return loss, sisdr
-
-    def _train_replica(self, mix, reference, valid_len, aux, aux_len):
-        # Gradients only. The all-reduce inside apply_gradients cannot run in
-        # this compiled function while it is called from strategy.run.
-        replicas = tf.cast(self.strategy.num_replicas_in_sync, tf.float32)
+    def _train_step_core(self, mix, reference, valid_len, aux, aux_len):
         with tf.GradientTape() as tape:
             loss, sisdr = self.compute_loss(
                 mix, reference, valid_len, aux, aux_len, training=True
             )
-            # MirroredStrategy sums gradients. Divide so that sum matches
-            # the mean over the global batch.
-            scaled = loss / replicas
-        gradients = tape.gradient(scaled, self.model.trainable_variables)
-        return scaled, sisdr, gradients
+        gradients = tape.gradient(loss, self.model.trainable_variables)
+        return loss, sisdr, gradients
 
-    def _eval_replica(self, mix, reference, valid_len, aux, aux_len):
-        replicas = tf.cast(self.strategy.num_replicas_in_sync, tf.float32)
-        loss, sisdr = self.compute_loss(
+    def _eval_step_core(self, mix, reference, valid_len, aux, aux_len):
+        return self.compute_loss(
             mix, reference, valid_len, aux, aux_len, training=False
         )
-        return loss / replicas, sisdr
-
-    def train_step(self, batch):
-        return self._distributed_train(*self._batch_tensors(batch))
 
     @tf.function
-    def _distributed_train(self, mix, reference, valid_len, aux, aux_len):
-        def step_fn(mix, reference, valid_len, aux, aux_len):
-            mix, reference, valid_len, aux, aux_len = self._replica_batch(
-                mix, reference, valid_len, aux, aux_len
-            )
-            scaled, sisdr, gradients = self._xla_train(
-                mix, reference, valid_len, aux, aux_len
-            )
-            self.optimizer.apply_gradients(
-                zip(gradients, self.model.trainable_variables)
-            )
-            return scaled, sisdr
-
-        per_loss, per_sisdr = self.strategy.run(
-            step_fn, args=(mix, reference, valid_len, aux, aux_len)
+    def train_step(self, mix, reference, valid_len, aux, aux_len):
+        loss, sisdr, gradients = self._xla_train(
+            mix, reference, valid_len, aux, aux_len
         )
-        return self._reduce_step(per_loss, per_sisdr)
-
-    def eval_step(self, batch):
-        return self._distributed_eval(*self._batch_tensors(batch))
+        self.optimizer.apply_gradients(
+            zip(gradients, self.model.trainable_variables)
+        )
+        return loss, sisdr
 
     @tf.function
-    def _distributed_eval(self, mix, reference, valid_len, aux, aux_len):
-        def step_fn(mix, reference, valid_len, aux, aux_len):
-            mix, reference, valid_len, aux, aux_len = self._replica_batch(
-                mix, reference, valid_len, aux, aux_len
-            )
-            return self._xla_eval(mix, reference, valid_len, aux, aux_len)
+    def eval_step(self, mix, reference, valid_len, aux, aux_len):
+        return self._xla_eval(mix, reference, valid_len, aux, aux_len)
 
-        per_loss, per_sisdr = self.strategy.run(
-            step_fn, args=(mix, reference, valid_len, aux, aux_len)
-        )
-        return self._reduce_step(per_loss, per_sisdr)
+    def train_batch(self, batch):
+        return self.train_step(*self._batch_tensors(batch))
+
+    def eval_batch(self, batch):
+        return self.eval_step(*self._batch_tensors(batch))
 
     def _run_epoch(self, loader, training):
         losses = []
         sisdrs = []
         started = time.time()
-        step = self.train_step if training else self.eval_step
+        step = self.train_batch if training else self.eval_batch
         phase = "train" if training else "dev"
         print(
             f"{phase}: loading the first batch, then compiling the first step...",
@@ -368,8 +317,7 @@ class SiSnrTrainer:
 
     def _learning_rate(self):
         value = self.optimizer.learning_rate
-        # Under MirroredStrategy this is one variable per GPU. .numpy() reads
-        # the primary replica. float() does not, because .value stays mirrored.
+        # Learning-rate schedule may be a variable or a callable.
         if hasattr(value, "numpy"):
             value = value.numpy()
         elif callable(value):

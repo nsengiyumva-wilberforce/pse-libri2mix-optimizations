@@ -64,26 +64,18 @@ warnings.filterwarnings("ignore")
 tf.config.optimizer.set_jit(False)
 
 
-def make_distribution_strategy():
-    """Use every visible GPU. One GPU, or none, keeps a single replica."""
+def configure_gpu():
     gpus = tf.config.list_physical_devices("GPU")
     for gpu in gpus:
         try:
             tf.config.experimental.set_memory_growth(gpu, True)
         except RuntimeError as exc:
             print(f"Could not enable memory growth on {gpu.name}: {exc}")
-    if len(gpus) > 1:
-        dist_strategy = tf.distribute.MirroredStrategy()
-    else:
-        dist_strategy = tf.distribute.get_strategy()
     names = ", ".join(gpu.name for gpu in gpus) if gpus else "CPU"
-    print(
-        f"Distribution: {dist_strategy.num_replicas_in_sync} replica(s) on {names}"
-    )
-    return dist_strategy, gpus
+    print(f"Training on {names}")
 
 
-strategy, visible_gpus = make_distribution_strategy()
+configure_gpu()
 
 
 # --------------------------------
@@ -128,11 +120,8 @@ MAX_REF_FRAMES = int(math.ceil(_MAX_AUX_FRAMES / 128) * 128)
 
 # Full-utterance reference encoding uses substantially more memory than the
 # segmented reference path. Keep this at one to fit the longest padded refs.
-PER_REPLICA_BATCH_SIZE = 16
-global_batch_size = PER_REPLICA_BATCH_SIZE * strategy.num_replicas_in_sync
-print(
-    f"Per-replica batch {PER_REPLICA_BATCH_SIZE}, global batch {global_batch_size}."
-)
+BATCH_SIZE = 2
+print(f"Batch size {BATCH_SIZE}.")
 EPOCHS = 150
 _AUDIO_TOOLKIT = AudioToolkit(
     target_sr=TARGET_SR,
@@ -559,6 +548,7 @@ class PowerLawComplexSpec(layers.Layer):
         self.eps = float(eps)
 
     def call(self, spec):
+        spec = ops.cast(spec, self.compute_dtype)
         real = spec[..., 0]
         imag = spec[..., 1]
         magnitude = ops.sqrt(ops.square(real) + ops.square(imag) + self.eps)
@@ -1165,31 +1155,6 @@ def cross_attention_cond(
     )
     return Add(name=f"{name}_residual_fusion")([x, speaker_context])
 
-
-def lca_block(x, channels, r=4, name="lca"):
-    inter_channels = int(channels // r)
-
-    # Local Attention
-    xl = layers.Conv2D(inter_channels, 1, padding="same", name=f"{name}_l1")(x)
-    xl = layers.BatchNormalization()(xl)
-    xl = layers.Activation("relu")(xl)
-    xl = layers.Conv2D(channels, 1, padding="same", name=f"{name}_l2")(xl)
-    xl = layers.BatchNormalization()(xl)
-
-    # Global Attention
-    xg = layers.GlobalAveragePooling2D(keepdims=True)(x)
-    xg = layers.Conv2D(inter_channels, 1, padding="same", name=f"{name}_g1")(xg)
-    xg = layers.BatchNormalization()(xg)
-    xg = layers.Activation("relu")(xg)
-    xg = layers.Conv2D(channels, 1, padding="same", name=f"{name}_g2")(xg)
-    xg = layers.BatchNormalization()(xg)
-
-    # Combine
-    xlg = layers.Add()([xl, xg])
-    wei = layers.Activation("sigmoid")(xlg)
-    return layers.Multiply()([x, wei])
-
-
 def _drop_nyquist_freq_bin(x):
     return x[:, :, :-1, :]
 
@@ -1259,7 +1224,9 @@ def custom_unet(
         guided = layers.ZeroPadding2D(
             padding=((0, pad_time), (0, pad_freq)), name="stft_guided_pad"
         )(guided)
-    x = layers.Add(name="stft_early_fusion")([x, guided])
+    x = layers.Add(name="stft_early_fusion")(
+        [x, ops.cast(guided, x.dtype)]
+    )
     ref_x = _masked_unit_scale(ref_body, ref_mask)
 
     # MAIN ENCODER
@@ -1398,9 +1365,9 @@ def custom_unet(
         x = layers.Cropping2D(
             cropping=((0, pad_time), (0, pad_freq)), name="unet_crop"
         )(x)
-    # --- Split noisy input into real / imag ---
-    input_r = main_input_copy[..., 0:1]
-    input_i = main_input_copy[..., 1:2]
+    # --- Split noisy input into real / imag (match feature dtype for XLA + bf16) ---
+    input_r = ops.cast(main_input_copy[..., 0:1], x.dtype)
+    input_i = ops.cast(main_input_copy[..., 1:2], x.dtype)
 
     # --- Predict complex mask ---
     # he_normal keeps a gradient into the U-Net. A zero kernel would make this
@@ -1443,6 +1410,7 @@ def custom_unet(
     outputs = PowerLawComplexSpec(factor=2.0, name="decompress_out")(outputs)
     nyquist = ops.zeros_like(outputs[:, :, :1, :])
     outputs = ops.concatenate([outputs, nyquist], axis=2)
+    outputs = ops.cast(outputs, "float32")
 
     return Model(inputs=[main_input, ref_input, ref_mask_input], outputs=[outputs])
 
@@ -1466,8 +1434,7 @@ def build_enhancement_model():
     )
 
 
-with strategy.scope():
-    enhancement_model = build_enhancement_model()
+enhancement_model = build_enhancement_model()
 
 
 enhancement_model.summary()
@@ -1478,40 +1445,29 @@ if not chunk_frames_match(CHUNK_SIZE, frame_length, frame_step, N_FRAMES):
         f"Chunk STFT frames {conv_stft_frames(CHUNK_SIZE, frame_length, frame_step)} "
         f"do not match the model input {N_FRAMES}."
     )
-with strategy.scope():
-    trainer = SiSnrTrainer(
-        enhancement_model,
-        _AUDIO_TOOLKIT,
-        MAX_REF_FRAMES,
-        model_filename,
-        logging_period=200,
-        strategy=strategy,
-    )
+trainer = SiSnrTrainer(
+    enhancement_model,
+    _AUDIO_TOOLKIT,
+    MAX_REF_FRAMES,
+    model_filename,
+    logging_period=200,
+)
 trainer.run(
     make_dataloader(
         train=True,
         data_kwargs=train_data,
         chunk_size=CHUNK_SIZE,
-        batch_size=global_batch_size,
+        batch_size=BATCH_SIZE,
     ),
     make_dataloader(
         train=False,
         data_kwargs=dev_data,
         chunk_size=CHUNK_SIZE,
-        batch_size=global_batch_size,
+        batch_size=BATCH_SIZE,
     ),
     num_epochs=EPOCHS,
 )
 enhancement_model.load_weights(model_filename)
-if strategy.num_replicas_in_sync > 1:
-    # Evaluation calls the model one utterance at a time. A mirrored model
-    # rejects a batch that is not divisible by the replica count.
-    print("Copying trained weights onto one device for evaluation.")
-    device = "/GPU:0" if visible_gpus else "/CPU:0"
-    with tf.device(device):
-        single_device_model = build_enhancement_model()
-    single_device_model.set_weights(enhancement_model.get_weights())
-    enhancement_model = single_device_model
 
 # load the keras model for inference
 # enhancement_model = tf.keras.models.load_model(

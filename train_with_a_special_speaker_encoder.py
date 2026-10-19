@@ -61,24 +61,18 @@ warnings.filterwarnings("ignore")
 tf.config.optimizer.set_jit(False)
 
 
-def make_distribution_strategy():
-    """Use every visible GPU. One GPU, or none, keeps a single replica."""
+def configure_gpu():
     gpus = tf.config.list_physical_devices("GPU")
     for gpu in gpus:
         try:
             tf.config.experimental.set_memory_growth(gpu, True)
         except RuntimeError as exc:
             print(f"Could not enable memory growth on {gpu.name}: {exc}")
-    if len(gpus) > 1:
-        strategy = tf.distribute.MirroredStrategy()
-    else:
-        strategy = tf.distribute.get_strategy()
     names = ", ".join(gpu.name for gpu in gpus) if gpus else "CPU"
-    print(f"Distribution: {strategy.num_replicas_in_sync} replica(s) on {names}")
-    return strategy, gpus
+    print(f"Training on {names}")
 
 
-strategy, visible_gpus = make_distribution_strategy()
+configure_gpu()
 
 
 # --------------------------------
@@ -121,9 +115,8 @@ N_FRAMES = conv_stft_frames(CHUNK_SIZE, frame_length, frame_step)
 _MAX_AUX_FRAMES = conv_stft_frames(18 * TARGET_SR, frame_length, frame_step)
 MAX_REF_FRAMES = int(math.ceil(_MAX_AUX_FRAMES / 128) * 128)
 
-PER_REPLICA_BATCH_SIZE = 4
-batch_size = PER_REPLICA_BATCH_SIZE * strategy.num_replicas_in_sync
-print(f"Per-replica batch {PER_REPLICA_BATCH_SIZE}, global batch {batch_size}.")
+BATCH_SIZE = 4
+print(f"Batch size {BATCH_SIZE}.")
 EPOCHS = 150
 _AUDIO_TOOLKIT = AudioToolkit(
     target_sr=TARGET_SR,
@@ -1394,8 +1387,7 @@ def build_enhancement_model():
     )
 
 
-with strategy.scope():
-    model = build_enhancement_model()
+model = build_enhancement_model()
 
 
 model.summary()
@@ -1406,37 +1398,25 @@ if not chunk_frames_match(CHUNK_SIZE, frame_length, frame_step, N_FRAMES):
         f"Chunk STFT frames {conv_stft_frames(CHUNK_SIZE, frame_length, frame_step)} "
         f"do not match the model input {N_FRAMES}."
     )
-with strategy.scope():
-    trainer = SiSnrTrainer(
-        model,
-        _AUDIO_TOOLKIT,
-        MAX_REF_FRAMES,
-        model_filename,
-        logging_period=200,
-        strategy=strategy,
-    )
+trainer = SiSnrTrainer(
+    model,
+    _AUDIO_TOOLKIT,
+    MAX_REF_FRAMES,
+    model_filename,
+    logging_period=200,
+)
 trainer.run(
     make_dataloader(
-        train=True, data_kwargs=train_data, chunk_size=CHUNK_SIZE, batch_size=batch_size
+        train=True, data_kwargs=train_data, chunk_size=CHUNK_SIZE, batch_size=BATCH_SIZE
     ),
     make_dataloader(
-        train=False, data_kwargs=dev_data, chunk_size=CHUNK_SIZE, batch_size=batch_size
+        train=False, data_kwargs=dev_data, chunk_size=CHUNK_SIZE, batch_size=BATCH_SIZE
     ),
     num_epochs=EPOCHS,
 )
 model.load_weights(
     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras"
 )
-if strategy.num_replicas_in_sync > 1:
-    # Evaluation calls the model one utterance at a time. A mirrored model
-    # rejects a batch that is not divisible by the replica count.
-    print("Copying trained weights onto one device for evaluation.")
-    device = "/GPU:0" if visible_gpus else "/CPU:0"
-    with tf.device(device):
-        single_device_model = build_enhancement_model()
-    single_device_model.set_weights(model.get_weights())
-    model = single_device_model
-
 # load the keras model for inference
 # model = tf.keras.models.load_model(
 #     "model_weights_final_version_hard_convolution_baseline_LIBRIMIX.keras",
